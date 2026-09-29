@@ -7,10 +7,45 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=25" />
+    <link rel="stylesheet" href="styles.css?v=195" />
   </head>
   <body>
     <div id="app"></div>
-    <script src="app.js?v=4"></script>
+    <script>
+      (() => {
+        const files = ["index.html", "styles.css", "dashboard-access.js", "app.js"];
+        let snapshot = "";
+        function hash(text) {
+          let value = 2166136261;
+          for (let index = 0; index < text.length; index += 1) {
+            value ^= text.charCodeAt(index);
+            value = Math.imul(value, 16777619);
+          }
+          return (value >>> 0).toString(36);
+        }
+        async function signature() {
+          const parts = await Promise.all(files.map(async file => {
+            const response = await fetch(`${file}?watch=${Date.now()}`, { cache: "no-store" });
+            return `${file}:${hash(await response.text())}`;
+          }));
+          return parts.join("|");
+        }
+        async function watch() {
+          try {
+            const next = await signature();
+            if (!snapshot) snapshot = next;
+            else if (next !== snapshot) location.reload();
+          } catch (error) {
+            // Preview watcher stays silent if the local server is briefly unavailable.
+          }
+        }
+        if (location.hostname === "127.0.0.1" || location.hostname === "localhost") {
+          setInterval(watch, 1200);
+          watch();
+        }
+      })();
+    </script>
+    <script src="dashboard-access.js?v=1"></script>
+    <script src="app.js?v=174"></script>
   </body>
 </html>
