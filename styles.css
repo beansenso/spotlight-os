@@ -9037,3 +9037,351 @@ textarea,
     grid-column: 1 / -1;
   }
 }
+
+/* Account identity and access administration */
+.account-switcher {
+  display: grid;
+  gap: 6px;
+}
+
+.account-switcher label {
+  margin: 0;
+}
+
+.account-switcher small {
+  color: #9f9b92;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.admin-page-head {
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.admin-page-head h2 {
+  font-size: 24px;
+}
+
+.admin-page-head p {
+  font-size: 11px;
+}
+
+.admin-boundary {
+  display: grid;
+  grid-template-columns: minmax(260px, .9fr) minmax(280px, 1.1fr);
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 16px;
+  padding: 13px 16px;
+  border: 1px solid rgba(164, 117, 255, .42);
+  border-left: 4px solid #a475ff;
+  border-radius: 7px;
+  background: rgba(84, 48, 137, .2);
+}
+
+.admin-boundary.compact {
+  margin-bottom: 14px;
+}
+
+.admin-boundary span,
+.account-access-preview > span {
+  display: block;
+  margin-bottom: 4px;
+  color: #c9acff;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.admin-boundary b {
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.admin-boundary p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.admin-metrics {
+  margin-bottom: 16px;
+}
+
+.account-admin-section,
+.account-create-form,
+.account-access-preview {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.account-admin-section {
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.account-create-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(260px, .45fr);
+  gap: 14px;
+}
+
+.account-create-form,
+.account-access-preview {
+  padding: 14px;
+}
+
+.account-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-form-grid > label,
+.account-form-grid fieldset {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.account-form-grid > label > span,
+.account-form-grid legend {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.account-form-grid input:not([type="radio"]),
+.account-form-grid select {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #11110f;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+}
+
+.account-form-grid fieldset {
+  grid-column: 1 / -1;
+  grid-template-columns: auto repeat(3, minmax(90px, auto));
+  align-items: center;
+  justify-content: start;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.account-form-grid fieldset legend {
+  grid-column: 1;
+  padding: 0;
+}
+
+.account-form-grid fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.account-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.account-access-preview {
+  border-color: rgba(107, 183, 255, .35);
+  box-shadow: inset 3px 0 0 #6bb7ff;
+}
+
+.account-access-preview h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.account-access-preview p,
+.account-access-preview small {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.account-access-preview > div,
+.account-page-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0;
+}
+
+.account-access-preview i,
+.account-page-list i {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 7px;
+  border: 1px solid rgba(107, 183, 255, .3);
+  border-radius: 999px;
+  background: rgba(107, 183, 255, .1);
+  color: #a9d4ff;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.account-activity-list,
+.account-directory {
+  display: grid;
+}
+
+.account-activity-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.account-activity-list article:first-child {
+  border-top: 0;
+}
+
+.account-activity-list b,
+.account-activity-list small {
+  display: block;
+}
+
+.account-activity-list b {
+  font-size: 10px;
+}
+
+.account-activity-list small,
+.account-activity-list time {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.account-directory-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(130px, 1fr) minmax(140px, 1fr) 70px minmax(210px, 1.5fr) 90px 82px;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+
+.account-directory-row:first-child {
+  border-top: 0;
+}
+
+.account-directory-row > div {
+  min-width: 0;
+}
+
+.account-directory-row > div > span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 7px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.account-directory-row b {
+  display: block;
+  font-size: 9px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.account-directory-user small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.account-directory-pages .account-page-list {
+  margin: 0;
+}
+
+.account-directory-status .status {
+  white-space: normal;
+}
+
+.account-protected {
+  color: #c9acff;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+@media (max-width: 1100px) {
+  .account-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .account-directory-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .account-directory-pages {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 780px) {
+  .admin-boundary,
+  .account-create-layout,
+  .account-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-form-grid fieldset {
+    grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .account-directory-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 14px 0;
+  }
+
+  .account-directory-user,
+  .account-directory-pages {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .account-directory-row {
+    grid-template-columns: 1fr;
+  }
+
+  .account-directory-user,
+  .account-directory-pages {
+    grid-column: auto;
+  }
+}
