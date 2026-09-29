@@ -101,6 +101,7 @@ const uiStateStorageKey = "spotlightUiState";
 const accountStorageKey = "spotlightUserAccounts";
 const accountActivityStorageKey = "spotlightAccountActivity";
 const accountSessionStorageKey = "spotlightAuthenticatedAccount";
+const accountPersistentStorageKey = "spotlightRememberedAccount";
 let selectedRevenueYear = JSON.parse(localStorage.getItem("spotlightRevenueYear") || "null");
 let adaptiveWidgetObserver;
 let crpBufferTooltipAnchor = null;
@@ -525,8 +526,9 @@ const state = {
   view: "Dashboard",
   role: "CEO",
   activeAccountId: "account-ceo",
-  authenticatedAccountId: sessionStorage.getItem(accountSessionStorageKey) || "",
+  authenticatedAccountId: sessionStorage.getItem(accountSessionStorageKey) || localStorage.getItem(accountPersistentStorageKey) || "",
   authMessage: "",
+  authMessageTone: "error",
   generatedAccountCredentials: null,
   accountEditId: null,
   selectedProjectId: "p1",
@@ -570,7 +572,11 @@ const state = {
 };
 
 if (!userAccounts.some(account => account.id === state.activeAccountId && account.switchable && account.status === "ACTIVE")) state.activeAccountId = "account-ceo";
-if (!userAccounts.some(account => account.id === state.authenticatedAccountId && account.status === "ACTIVE")) state.authenticatedAccountId = "";
+if (!userAccounts.some(account => account.id === state.authenticatedAccountId && account.status === "ACTIVE")) {
+  state.authenticatedAccountId = "";
+  sessionStorage.removeItem(accountSessionStorageKey);
+  localStorage.removeItem(accountPersistentStorageKey);
+}
 if (state.authenticatedAccountId) state.activeAccountId = state.authenticatedAccountId;
 state.role = canonicalRole(activeAccount()?.role || "CEO");
 if (!availableRoles.includes(state.role)) state.role = "CEO";
@@ -777,8 +783,9 @@ function accountLoginPage() {
       <div class="auth-heading"><span>Account Login</span><h1>Sign in</h1><p>Use your company-issued email address and password.</p></div>
       <form id="accountLoginForm" class="auth-form">
         <label><span>Email</span><input name="email" type="email" autocomplete="username" required placeholder="name@company.com" /></label>
-        <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required placeholder="Password" /></label>
-        ${state.authMessage ? `<p class="auth-error" role="alert">${escapeHtml(state.authMessage)}</p>` : ""}
+        <label><span>Password</span><div class="auth-password-control"><input id="loginPassword" name="password" type="password" autocomplete="current-password" required placeholder="Password" /><button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Show password" aria-pressed="false"></button></div></label>
+        <div class="auth-login-options"><label class="auth-remember"><input name="remember" type="checkbox" /><span>Remember me</span></label><button class="auth-link" type="button" data-forgot-password>Forgot password?</button></div>
+        ${state.authMessage ? `<p class="auth-feedback ${state.authMessageTone === "success" ? "is-success" : "is-error"}" role="status">${escapeHtml(state.authMessage)}</p>` : ""}
         <button class="btn primary" type="submit">Login</button>
       </form>
       ${ownerAccess.length ? `<details class="auth-bootstrap"><summary>Demo owner access</summary><p>This public prototype uses browser-only credentials. Replace these addresses when company authentication is connected.</p>${ownerAccess.map(account => `<div><span>${escapeHtml(account.role)}</span><b>${escapeHtml(account.email)}</b><code>${escapeHtml(account.temporaryPassword)}</code></div>`).join("")}</details>` : ""}
@@ -793,10 +800,10 @@ function passwordChangePage(account) {
       <div class="auth-heading"><span>Password Required</span><h1>Create your password</h1><p>${escapeHtml(account.email)}</p></div>
       <section class="auth-notice"><b>Your temporary password worked.</b><span>Create a private password before entering your dashboard.</span></section>
       <form id="accountPasswordChangeForm" class="auth-form">
-        <label><span>New Password</span><input name="password" type="password" autocomplete="new-password" required minlength="10" placeholder="At least 10 characters" /></label>
-        <label><span>Confirm Password</span><input name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" placeholder="Repeat password" /></label>
+        <label><span>New Password</span><div class="auth-password-control"><input id="newPassword" name="password" type="password" autocomplete="new-password" required minlength="10" placeholder="At least 10 characters" /><button class="password-toggle" type="button" data-password-toggle="newPassword" aria-label="Show password" aria-pressed="false"></button></div></label>
+        <label><span>Confirm Password</span><div class="auth-password-control"><input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" placeholder="Repeat password" /><button class="password-toggle" type="button" data-password-toggle="confirmPassword" aria-label="Show password" aria-pressed="false"></button></div></label>
         <small>Use at least 10 characters with uppercase, lowercase, a number, and a symbol.</small>
-        ${state.authMessage ? `<p class="auth-error" role="alert">${escapeHtml(state.authMessage)}</p>` : ""}
+        ${state.authMessage ? `<p class="auth-feedback ${state.authMessageTone === "success" ? "is-success" : "is-error"}" role="status">${escapeHtml(state.authMessage)}</p>` : ""}
         <div class="auth-actions"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-account-logout>Logout</button></div>
       </form>
     </section>
@@ -807,7 +814,7 @@ function passwordMeetsRequirements(password) {
   return password.length >= 10 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 }
 
-function resetWorkspaceForAccount(account) {
+function resetWorkspaceForAccount(account, remember = false) {
   state.authenticatedAccountId = account.id;
   state.activeAccountId = account.id;
   state.role = canonicalRole(account.role);
@@ -815,28 +822,67 @@ function resetWorkspaceForAccount(account) {
   state.tab = "Overview";
   state.search = "";
   state.authMessage = "";
+  state.authMessageTone = "error";
   state.generatedAccountCredentials = null;
   state.accountEditId = null;
   state.reviewSnapshot = null;
   state.billingFormOpen = false;
   state.billingPreviewId = null;
   state.liquidationSubmitOpen = false;
-  sessionStorage.setItem(accountSessionStorageKey, account.id);
+  if (remember) {
+    localStorage.setItem(accountPersistentStorageKey, account.id);
+    sessionStorage.removeItem(accountSessionStorageKey);
+  } else {
+    sessionStorage.setItem(accountSessionStorageKey, account.id);
+    localStorage.removeItem(accountPersistentStorageKey);
+  }
 }
 
 function logoutAccount() {
   const account = activeAccount();
   if (state.authenticatedAccountId && account) recordAccountActivity("Signed out", `${account.name} · ${account.role}`, account.id);
   sessionStorage.removeItem(accountSessionStorageKey);
+  localStorage.removeItem(accountPersistentStorageKey);
   state.authenticatedAccountId = "";
   state.authMessage = "";
+  state.authMessageTone = "error";
   state.generatedAccountCredentials = null;
   state.accountEditId = null;
   render();
 }
 
 function bindAuthentication() {
+  document.querySelectorAll("[data-password-toggle]").forEach(button => button.addEventListener("click", () => {
+    const input = document.getElementById(button.dataset.passwordToggle);
+    if (!input) return;
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    button.classList.toggle("is-visible", show);
+    button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    button.setAttribute("aria-pressed", String(show));
+    input.focus();
+  }));
   const loginForm = document.getElementById("accountLoginForm");
+  loginForm?.querySelector('input[name="email"]')?.addEventListener("input", event => event.currentTarget.setCustomValidity(""));
+  document.querySelector("[data-forgot-password]")?.addEventListener("click", () => {
+    const emailField = loginForm?.querySelector('input[name="email"]');
+    const email = normalizeCell(emailField?.value).toLowerCase();
+    if (!email) {
+      emailField?.setCustomValidity("Enter your company email address first.");
+      emailField?.reportValidity();
+      return;
+    }
+    emailField?.setCustomValidity("");
+    const account = userAccounts.find(item => keyCell(item.email) === keyCell(email));
+    if (account?.status === "ACTIVE") {
+      account.passwordResetRequestedAt = new Date().toLocaleString("en-PH", { dateStyle:"medium", timeStyle:"short" });
+      accountActivity.unshift({ action:"Password reset requested", detail:`${account.name} · ${account.email}`, subjectId:account.id, actor:email, at:account.passwordResetRequestedAt });
+      persistUserAccounts();
+    }
+    state.authMessage = "If this email belongs to an active account, the request is now with the Super Admin.";
+    state.authMessageTone = "success";
+    render();
+  });
   loginForm?.addEventListener("submit", async event => {
     event.preventDefault();
     const formData = new FormData(loginForm);
@@ -845,15 +891,18 @@ function bindAuthentication() {
     const account = userAccounts.find(item => keyCell(item.email) === keyCell(email));
     if (!account || !(await accountPasswordMatches(account, password))) {
       state.authMessage = "Email or password is incorrect.";
+      state.authMessageTone = "error";
       render();
       return;
     }
     if (account.status !== "ACTIVE") {
       state.authMessage = "This account is suspended. Please contact the Super Admin.";
+      state.authMessageTone = "error";
       render();
       return;
     }
-    resetWorkspaceForAccount(account);
+    delete account.passwordResetRequestedAt;
+    resetWorkspaceForAccount(account, formData.get("remember") === "on");
     recordAccountActivity("Signed in", `${account.name} · ${account.role}`, account.id);
     render();
   });
@@ -866,18 +915,22 @@ function bindAuthentication() {
     const confirmation = String(formData.get("confirmPassword") || "");
     if (!passwordMeetsRequirements(password)) {
       state.authMessage = "Password does not meet the required format.";
+      state.authMessageTone = "error";
       render();
       return;
     }
     if (password !== confirmation) {
       state.authMessage = "Passwords do not match.";
+      state.authMessageTone = "error";
       render();
       return;
     }
     account.passwordHash = await digestPassword(password);
     delete account.temporaryPassword;
     account.mustChangePassword = false;
+    delete account.passwordResetRequestedAt;
     state.authMessage = "";
+    state.authMessageTone = "error";
     recordAccountActivity("Password created", `${account.name} completed first-time setup`, account.id);
     render();
   });
@@ -894,8 +947,10 @@ function render() {
   const account = activeAccount();
   if (!account || account.status !== "ACTIVE") {
     sessionStorage.removeItem(accountSessionStorageKey);
+    localStorage.removeItem(accountPersistentStorageKey);
     state.authenticatedAccountId = "";
     state.authMessage = "Your session is no longer active.";
+    state.authMessageTone = "error";
     render();
     return;
   }
@@ -3151,6 +3206,7 @@ function accountScopeDescription(scope) {
 
 function accountDisplayStatus(account) {
   if (account.status === "SUSPENDED") return chip("SUSPENDED", "risk");
+  if (account.passwordResetRequestedAt) return chip("RESET REQUESTED", "risk");
   if (account.mustChangePassword) return chip("PASSWORD SETUP", "warn");
   return chip("ACTIVE", "good");
 }
@@ -10735,6 +10791,7 @@ function bind() {
     const password = generateTemporaryPassword();
     account.passwordHash = await digestPassword(password);
     delete account.temporaryPassword;
+    delete account.passwordResetRequestedAt;
     account.mustChangePassword = true;
     recordAccountActivity("Password reset", `${account.name} · ${account.email}`, account.id);
     state.generatedAccountCredentials = { name:account.name, email:account.email, password, reason:"Password reset" };

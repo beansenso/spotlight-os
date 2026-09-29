@@ -7615,8 +7615,8 @@ tr.clickable:hover td { background: #fffaf0; }
 body {
   font-family: "Montserrat", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background:
-    radial-gradient(circle at 74% -10%, rgba(78,210,197,.12), transparent 34%),
-    linear-gradient(180deg, #111310 0, var(--paper) 440px),
+    linear-gradient(180deg, rgba(8, 3, 23, .70), rgba(8, 9, 10, .90)),
+    url("assets/spotlight-system-background.png") center / cover fixed no-repeat,
     var(--paper);
 }
 
@@ -9392,7 +9392,7 @@ textarea,
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #0c0e0d;
+  background: transparent;
 }
 
 .auth-panel {
@@ -9491,6 +9491,107 @@ textarea,
   font-size: 11px;
 }
 
+.auth-password-control {
+  position: relative;
+}
+
+.auth-password-control input {
+  padding-right: 46px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 32px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #c9c4ba;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  background: rgba(255, 255, 255, .07);
+  color: #fff;
+  outline: 0;
+}
+
+.password-toggle::before {
+  width: 15px;
+  height: 15px;
+  transform: rotate(45deg);
+  border: 1.8px solid currentColor;
+  border-radius: 11px 2px 11px 2px;
+  content: "";
+}
+
+.password-toggle::after {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.password-toggle.is-visible::before {
+  border-color: #a475ff;
+}
+
+.auth-login-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.auth-form .auth-remember input {
+  width: 15px;
+  min-width: 15px;
+  height: 15px;
+  min-height: 15px;
+  margin: 0;
+  accent-color: #a475ff;
+}
+
+.auth-remember span {
+  color: #d8d3ca !important;
+  font-size: 9px !important;
+  font-weight: 650 !important;
+  text-transform: none !important;
+}
+
+.auth-link {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: #c9acff;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.auth-link:hover,
+.auth-link:focus-visible {
+  color: #fff;
+  outline: 0;
+  text-decoration: underline;
+}
+
 .auth-form > small {
   color: var(--muted);
   font-size: 8px;
@@ -9509,14 +9610,23 @@ textarea,
   gap: 8px;
 }
 
-.auth-error {
+.auth-feedback {
   margin: 0;
   padding: 9px 10px;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.auth-feedback.is-error {
   border-left: 3px solid #ff7770;
   background: rgba(255, 119, 112, .08);
   color: #ffaaa5;
-  font-size: 9px;
-  line-height: 1.4;
+}
+
+.auth-feedback.is-success {
+  border-left: 3px solid #65d590;
+  background: rgba(101, 213, 144, .08);
+  color: #9ee7bb;
 }
 
 .auth-notice {
@@ -9707,6 +9817,12 @@ textarea,
 
   .auth-panel {
     padding: 18px;
+  }
+
+  .auth-login-options {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .account-head-actions {
