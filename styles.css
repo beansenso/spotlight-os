@@ -9385,3 +9385,340 @@ textarea,
     grid-column: auto;
   }
 }
+
+/* Account authentication and lifecycle management */
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #0c0e0d;
+}
+
+.auth-panel {
+  width: min(100%, 460px);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-top: 4px solid #a475ff;
+  border-radius: 8px;
+  background: #151614;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .36);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.auth-brand .mark {
+  width: 42px;
+  height: 42px;
+}
+
+.auth-brand strong,
+.auth-brand span {
+  display: block;
+}
+
+.auth-brand strong {
+  font-size: 15px;
+}
+
+.auth-brand span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.auth-heading {
+  margin: 22px 0 18px;
+}
+
+.auth-heading > span {
+  color: #6bb7ff;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.auth-heading h1 {
+  margin: 5px 0;
+  font-size: 28px;
+}
+
+.auth-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form > label,
+.account-edit-form > label {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-form label > span,
+.account-edit-form label > span,
+.account-edit-form legend {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.auth-form input,
+.account-edit-form input:not([type="radio"]),
+.account-edit-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0f100f;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+}
+
+.auth-form > small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.auth-form > .btn {
+  width: 100%;
+  min-height: 42px;
+  justify-content: center;
+}
+
+.auth-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.auth-error {
+  margin: 0;
+  padding: 9px 10px;
+  border-left: 3px solid #ff7770;
+  background: rgba(255, 119, 112, .08);
+  color: #ffaaa5;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.auth-notice {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-left: 3px solid #f0b84b;
+  background: rgba(240, 184, 75, .08);
+}
+
+.auth-notice b {
+  font-size: 10px;
+}
+
+.auth-notice span {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.auth-bootstrap {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.auth-bootstrap summary {
+  padding: 13px 0 8px;
+  color: #c9acff;
+  font-size: 9px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.auth-bootstrap > p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.auth-bootstrap > div {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+
+.auth-bootstrap span {
+  grid-row: span 2;
+  color: #6bb7ff;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.auth-bootstrap b,
+.auth-bootstrap code {
+  overflow-wrap: anywhere;
+  font-size: 9px;
+}
+
+.auth-bootstrap code {
+  color: #ffe19a;
+}
+
+.account-session {
+  display: grid;
+  gap: 5px;
+}
+
+.account-session label {
+  margin: 0;
+}
+
+.account-session b {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.account-session small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.account-session .btn {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+.account-head-actions,
+.account-directory-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.account-directory-row {
+  grid-template-columns: minmax(150px, 1.2fr) minmax(125px, 1fr) minmax(130px, 1fr) 65px minmax(190px, 1.4fr) 105px minmax(170px, auto);
+}
+
+.account-directory-action .btn {
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.account-credentials-modal,
+.account-edit-modal {
+  max-width: 580px;
+}
+
+.account-credential-sheet {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.account-credential-sheet > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.account-credential-sheet span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.account-credential-sheet b,
+.account-credential-sheet code {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.account-credential-sheet code {
+  color: #ffe19a;
+  font-weight: 850;
+}
+
+.account-edit-form {
+  display: grid;
+  gap: 11px;
+  margin-top: 16px;
+}
+
+.account-edit-form fieldset {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.account-edit-form fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+}
+
+@media (max-width: 1100px) {
+  .account-directory-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .account-directory-action {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .auth-shell {
+    padding: 12px;
+  }
+
+  .auth-panel {
+    padding: 18px;
+  }
+
+  .account-head-actions {
+    justify-content: flex-start;
+  }
+
+  .account-credential-sheet > div {
+    grid-template-columns: 1fr;
+  }
+
+  .account-edit-form fieldset {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -100,6 +100,7 @@ const crpRescanAttempted = new Set();
 const uiStateStorageKey = "spotlightUiState";
 const accountStorageKey = "spotlightUserAccounts";
 const accountActivityStorageKey = "spotlightAccountActivity";
+const accountSessionStorageKey = "spotlightAuthenticatedAccount";
 let selectedRevenueYear = JSON.parse(localStorage.getItem("spotlightRevenueYear") || "null");
 let adaptiveWidgetObserver;
 let crpBufferTooltipAnchor = null;
@@ -157,11 +158,21 @@ const roleDepartments = [
 const availableRoles = roleDepartments.flatMap(department => department.roles);
 
 const defaultUserAccounts = [
-  { id:"account-super-admin", name:"Mia Santos", email:"superadmin@spotlight.local", department:"System Administration", role:"SUPER ADMIN", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-09-29" },
-  { id:"account-ceo", name:"Mia Santos", email:"ceo@spotlight.local", department:"Executive Department", role:"CEO", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-09-29" }
+  { id:"account-super-admin", name:"Mia Santos", email:"superadmin@spotlight.local", department:"System Administration", role:"SUPER ADMIN", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-09-29", temporaryPassword:"SA!7K2Q9mX4", mustChangePassword:true },
+  { id:"account-ceo", name:"Mia Santos", email:"ceo@spotlight.local", department:"Executive Department", role:"CEO", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-09-29", temporaryPassword:"CEO!9M4rX2K", mustChangePassword:true }
 ];
-const userAccounts = readStoredJson(accountStorageKey, defaultUserAccounts).map(account => ({ ...account }));
+const userAccounts = readStoredJson(accountStorageKey, defaultUserAccounts).map(account => ({
+  scope:"ASSIGNED",
+  status:"ACTIVE",
+  mustChangePassword:true,
+  ...account
+}));
 const accountActivity = readStoredJson(accountActivityStorageKey, []);
+
+userAccounts.forEach(account => {
+  if (!account.passwordHash && !account.temporaryPassword) account.temporaryPassword = generateTemporaryPassword();
+  if (account.mustChangePassword === undefined) account.mustChangePassword = !account.passwordHash;
+});
 
 function persistUserAccounts() {
   localStorage.setItem(accountStorageKey, JSON.stringify(userAccounts));
@@ -169,7 +180,8 @@ function persistUserAccounts() {
 }
 
 function activeAccount() {
-  return userAccounts.find(account => account.id === state.activeAccountId) || userAccounts.find(account => account.id === "account-ceo") || userAccounts[0];
+  const accountId = state.authenticatedAccountId || state.activeAccountId;
+  return userAccounts.find(account => account.id === accountId) || userAccounts.find(account => account.id === "account-ceo") || userAccounts[0];
 }
 
 function isSuperAdminMode() {
@@ -178,6 +190,49 @@ function isSuperAdminMode() {
 
 function switchableAccountOptions() {
   return userAccounts.filter(account => account.switchable && account.status === "ACTIVE").map(account => `<option value="${escapeHtml(account.id)}" ${account.id === state.activeAccountId ? "selected" : ""}>${escapeHtml(account.role)}</option>`).join("");
+}
+
+function generateTemporaryPassword() {
+  const groups = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "!@#$%"];
+  const randomIndex = length => {
+    if (globalThis.crypto?.getRandomValues) {
+      const value = new Uint32Array(1);
+      globalThis.crypto.getRandomValues(value);
+      return value[0] % length;
+    }
+    return Math.floor(Math.random() * length);
+  };
+  const required = groups.map(group => group[randomIndex(group.length)]);
+  const pool = groups.join("");
+  while (required.length < 12) required.push(pool[randomIndex(pool.length)]);
+  for (let index = required.length - 1; index > 0; index -= 1) {
+    const swap = randomIndex(index + 1);
+    [required[index], required[swap]] = [required[swap], required[index]];
+  }
+  return required.join("");
+}
+
+async function digestPassword(password) {
+  const value = new TextEncoder().encode(`spotlight-os:${password}`);
+  const digest = await crypto.subtle.digest("SHA-256", value);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function accountPasswordMatches(account, password) {
+  if (account.temporaryPassword) return account.temporaryPassword === password;
+  if (!account.passwordHash) return false;
+  return account.passwordHash === await digestPassword(password);
+}
+
+function recordAccountActivity(action, detail, subjectId = "") {
+  accountActivity.unshift({
+    action,
+    detail,
+    subjectId,
+    actor:activeAccount()?.email || "System",
+    at:new Date().toLocaleString("en-PH", { dateStyle:"medium", timeStyle:"short" })
+  });
+  persistUserAccounts();
 }
 
 function activateAccount(accountId) {
@@ -470,6 +525,10 @@ const state = {
   view: "Dashboard",
   role: "CEO",
   activeAccountId: "account-ceo",
+  authenticatedAccountId: sessionStorage.getItem(accountSessionStorageKey) || "",
+  authMessage: "",
+  generatedAccountCredentials: null,
+  accountEditId: null,
   selectedProjectId: "p1",
   tab: "Overview",
   search: "",
@@ -511,8 +570,11 @@ const state = {
 };
 
 if (!userAccounts.some(account => account.id === state.activeAccountId && account.switchable && account.status === "ACTIVE")) state.activeAccountId = "account-ceo";
+if (!userAccounts.some(account => account.id === state.authenticatedAccountId && account.status === "ACTIVE")) state.authenticatedAccountId = "";
+if (state.authenticatedAccountId) state.activeAccountId = state.authenticatedAccountId;
 state.role = canonicalRole(activeAccount()?.role || "CEO");
 if (!availableRoles.includes(state.role)) state.role = "CEO";
+persistUserAccounts();
 if (!db.projects.some(item => item.id === state.selectedProjectId)) {
   state.selectedProjectId = db.projects.find(item => item.stage !== "LOST")?.id || db.projects[0]?.id || "";
 }
@@ -707,10 +769,142 @@ function metrics() {
   return { active, awarded, pitching, pipelineValue, expectedRevenue, estCost, actRevenue, actCost, outstandingAdvances, ar };
 }
 
-function render() {
-  persistUiState();
-  const app = document.getElementById("app");
+function accountLoginPage() {
+  const ownerAccess = userAccounts.filter(account => account.switchable && account.temporaryPassword);
+  return `<main class="auth-shell">
+    <section class="auth-panel">
+      <div class="auth-brand"><div class="mark"><img src="assets/spotlight-logo.png?v=4" alt="" /></div><div><strong>Spotlight OS</strong><span>Secure workspace access</span></div></div>
+      <div class="auth-heading"><span>Account Login</span><h1>Sign in</h1><p>Use your company-issued email address and password.</p></div>
+      <form id="accountLoginForm" class="auth-form">
+        <label><span>Email</span><input name="email" type="email" autocomplete="username" required placeholder="name@company.com" /></label>
+        <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required placeholder="Password" /></label>
+        ${state.authMessage ? `<p class="auth-error" role="alert">${escapeHtml(state.authMessage)}</p>` : ""}
+        <button class="btn primary" type="submit">Login</button>
+      </form>
+      ${ownerAccess.length ? `<details class="auth-bootstrap"><summary>Demo owner access</summary><p>This public prototype uses browser-only credentials. Replace these addresses when company authentication is connected.</p>${ownerAccess.map(account => `<div><span>${escapeHtml(account.role)}</span><b>${escapeHtml(account.email)}</b><code>${escapeHtml(account.temporaryPassword)}</code></div>`).join("")}</details>` : ""}
+    </section>
+  </main>`;
+}
+
+function passwordChangePage(account) {
+  return `<main class="auth-shell">
+    <section class="auth-panel">
+      <div class="auth-brand"><div class="mark"><img src="assets/spotlight-logo.png?v=4" alt="" /></div><div><strong>Spotlight OS</strong><span>First-time security setup</span></div></div>
+      <div class="auth-heading"><span>Password Required</span><h1>Create your password</h1><p>${escapeHtml(account.email)}</p></div>
+      <section class="auth-notice"><b>Your temporary password worked.</b><span>Create a private password before entering your dashboard.</span></section>
+      <form id="accountPasswordChangeForm" class="auth-form">
+        <label><span>New Password</span><input name="password" type="password" autocomplete="new-password" required minlength="10" placeholder="At least 10 characters" /></label>
+        <label><span>Confirm Password</span><input name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" placeholder="Repeat password" /></label>
+        <small>Use at least 10 characters with uppercase, lowercase, a number, and a symbol.</small>
+        ${state.authMessage ? `<p class="auth-error" role="alert">${escapeHtml(state.authMessage)}</p>` : ""}
+        <div class="auth-actions"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-account-logout>Logout</button></div>
+      </form>
+    </section>
+  </main>`;
+}
+
+function passwordMeetsRequirements(password) {
+  return password.length >= 10 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+}
+
+function resetWorkspaceForAccount(account) {
+  state.authenticatedAccountId = account.id;
+  state.activeAccountId = account.id;
+  state.role = canonicalRole(account.role);
+  state.view = "Dashboard";
+  state.tab = "Overview";
+  state.search = "";
+  state.authMessage = "";
+  state.generatedAccountCredentials = null;
+  state.accountEditId = null;
+  state.reviewSnapshot = null;
+  state.billingFormOpen = false;
+  state.billingPreviewId = null;
+  state.liquidationSubmitOpen = false;
+  sessionStorage.setItem(accountSessionStorageKey, account.id);
+}
+
+function logoutAccount() {
   const account = activeAccount();
+  if (state.authenticatedAccountId && account) recordAccountActivity("Signed out", `${account.name} · ${account.role}`, account.id);
+  sessionStorage.removeItem(accountSessionStorageKey);
+  state.authenticatedAccountId = "";
+  state.authMessage = "";
+  state.generatedAccountCredentials = null;
+  state.accountEditId = null;
+  render();
+}
+
+function bindAuthentication() {
+  const loginForm = document.getElementById("accountLoginForm");
+  loginForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const formData = new FormData(loginForm);
+    const email = normalizeCell(formData.get("email")).toLowerCase();
+    const password = String(formData.get("password") || "");
+    const account = userAccounts.find(item => keyCell(item.email) === keyCell(email));
+    if (!account || !(await accountPasswordMatches(account, password))) {
+      state.authMessage = "Email or password is incorrect.";
+      render();
+      return;
+    }
+    if (account.status !== "ACTIVE") {
+      state.authMessage = "This account is suspended. Please contact the Super Admin.";
+      render();
+      return;
+    }
+    resetWorkspaceForAccount(account);
+    recordAccountActivity("Signed in", `${account.name} · ${account.role}`, account.id);
+    render();
+  });
+  const passwordForm = document.getElementById("accountPasswordChangeForm");
+  passwordForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const account = activeAccount();
+    const formData = new FormData(passwordForm);
+    const password = String(formData.get("password") || "");
+    const confirmation = String(formData.get("confirmPassword") || "");
+    if (!passwordMeetsRequirements(password)) {
+      state.authMessage = "Password does not meet the required format.";
+      render();
+      return;
+    }
+    if (password !== confirmation) {
+      state.authMessage = "Passwords do not match.";
+      render();
+      return;
+    }
+    account.passwordHash = await digestPassword(password);
+    delete account.temporaryPassword;
+    account.mustChangePassword = false;
+    state.authMessage = "";
+    recordAccountActivity("Password created", `${account.name} completed first-time setup`, account.id);
+    render();
+  });
+  document.querySelectorAll("[data-account-logout]").forEach(button => button.addEventListener("click", logoutAccount));
+}
+
+function render() {
+  const app = document.getElementById("app");
+  if (!state.authenticatedAccountId) {
+    app.innerHTML = accountLoginPage();
+    bindAuthentication();
+    return;
+  }
+  const account = activeAccount();
+  if (!account || account.status !== "ACTIVE") {
+    sessionStorage.removeItem(accountSessionStorageKey);
+    state.authenticatedAccountId = "";
+    state.authMessage = "Your session is no longer active.";
+    render();
+    return;
+  }
+  if (account.mustChangePassword) {
+    app.innerHTML = passwordChangePage(account);
+    bindAuthentication();
+    return;
+  }
+  persistUiState();
   const navItems = visibleNavigationItems();
   const projectViewAllowed = navItems.includes("Projects");
   if ((!navItems.includes(state.view) && state.view !== "Project 360") || (state.view === "Project 360" && !projectViewAllowed)) state.view = "Dashboard";
@@ -718,10 +912,11 @@ function render() {
     <div class="shell ${state.sidebarHidden ? "sidebar-hidden" : ""}">
       <aside class="side">
         <div class="brand"><div class="mark"><img src="assets/spotlight-logo.png?v=4" alt="" /></div><div><strong>Spotlight OS</strong><span>Project-first operating layer</span></div></div>
-        <div class="rolebox account-switcher">
-          <label>Active account</label>
-          <select id="accountSelect" aria-label="Active account">${switchableAccountOptions()}</select>
-          <small>${isSuperAdminMode() ? "System administration only" : "Executive operations only"}</small>
+        <div class="rolebox account-session">
+          <label>Signed in as</label>
+          <b>${escapeHtml(account.role)}</b>
+          <small>${escapeHtml(account.email)}</small>
+          <button class="btn compact" type="button" data-account-logout>Switch</button>
         </div>
         ${isSuperAdminMode() ? "" : globalSearchField()}
         <nav class="nav">${navItems.map(v => v === "Projects" ? projectNavigationAccordion() : `<button class="${state.view === v ? "active" : ""}" data-view="${v}">${icon(v)} ${v}</button>`).join("")}</nav>
@@ -755,6 +950,8 @@ function render() {
         ${billingCollectionProofModal()}
         ${postAuditFormModal()}
         ${projectDraftModal()}
+        ${generatedAccountCredentialsModal()}
+        ${accountEditModal()}
       </main>
     </div>`;
   bind();
@@ -2952,15 +3149,63 @@ function accountScopeDescription(scope) {
   }[scope] || "Own records and projects specifically assigned to this user.";
 }
 
+function accountDisplayStatus(account) {
+  if (account.status === "SUSPENDED") return chip("SUSPENDED", "risk");
+  if (account.mustChangePassword) return chip("PASSWORD SETUP", "warn");
+  return chip("ACTIVE", "good");
+}
+
+function generatedAccountCredentialsModal() {
+  const credentials = state.generatedAccountCredentials;
+  if (!credentials) return "";
+  return `<div class="review-backdrop" role="presentation" data-account-credentials-close>
+    <section class="review-modal account-credentials-modal" role="dialog" aria-modal="true" aria-label="Temporary account password">
+      <div class="modal-kicker">Temporary Access</div><h2>${escapeHtml(credentials.reason || "Account created")}</h2><p>Send these credentials privately. The user must replace this password after the first successful login.</p>
+      <div class="account-credential-sheet"><div><span>User</span><b>${escapeHtml(credentials.name)}</b></div><div><span>Email</span><b>${escapeHtml(credentials.email)}</b></div><div><span>Password</span><code>${escapeHtml(credentials.password)}</code></div></div>
+      <div class="modal-actions"><button class="btn primary" type="button" data-account-password-copy>Copy</button><button class="btn" type="button" data-account-credentials-close>Done</button></div>
+    </section>
+  </div>`;
+}
+
+function accountEditModal() {
+  const account = userAccounts.find(item => item.id === state.accountEditId);
+  if (!account || !isSuperAdminMode()) return "";
+  return `<div class="review-backdrop" role="presentation" data-account-edit-close>
+    <section class="review-modal account-edit-modal" role="dialog" aria-modal="true" aria-label="Edit user account">
+      <button class="modal-close" type="button" data-account-edit-close aria-label="Close account editor">×</button><div class="modal-kicker">Account Management</div><h2>Edit User</h2>
+      <form id="accountEditForm" class="account-edit-form">
+        <label><span>Full Name</span><input name="name" value="${escapeHtml(account.name)}" required /></label>
+        <label><span>Email</span><input name="email" type="email" value="${escapeHtml(account.email)}" required /></label>
+        ${account.switchable ? `<label><span>Role</span><input value="${escapeHtml(account.role)}" disabled /><input type="hidden" name="role" value="${escapeHtml(account.role)}" /></label><fieldset><legend>Record Scope</legend><b>${escapeHtml(accessScopeLabel(account.scope))}</b><input type="hidden" name="scope" value="${escapeHtml(account.scope)}" /></fieldset>` : `<label><span>Role</span><select name="role">${accountRoleOptions(account.role)}</select></label><fieldset><legend>Record Scope</legend>${["ASSIGNED", "TEAM", "ALL"].map(scope => `<label><input type="radio" name="scope" value="${scope}" ${account.scope === scope ? "checked" : ""} /> ${accessScopeLabel(scope)}</label>`).join("")}</fieldset>`}
+        <div class="modal-actions"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-account-edit-close>Cancel</button></div>
+      </form>
+    </section>
+  </div>`;
+}
+
+function downloadAccountActivityLog() {
+  const rows = [["Date", "Action", "Details", "Actor", "Subject ID"], ...accountActivity.map(item => [item.at || "", item.action || "", item.detail || "", item.actor || "System", item.subjectId || ""] )];
+  const csv = rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `spotlight-account-activity-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  recordAccountActivity("Activity log downloaded", `${accountActivity.length} account events exported`);
+}
+
 function superAdminDashboard() {
   const active = userAccounts.filter(account => account.status === "ACTIVE").length;
   const administrators = userAccounts.filter(account => account.role === "SUPER ADMIN" && account.status === "ACTIVE").length;
   const suspended = userAccounts.filter(account => account.status === "SUSPENDED").length;
   const recent = accountActivity.slice(0, 5);
-  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">System Administration</span><h2>Access Control</h2><p>Manage identities and permissions without entering the CEO's operating workspace.</p></div><button class="btn primary" type="button" data-view="Accounts">Accounts</button></div>
-    <section class="admin-boundary"><div><span>Separate Identity</span><b>Super Admin controls the system, not executive decisions.</b></div><p>Switch to the CEO account to review projects, approvals, finance, and business performance.</p></section>
+  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">System Administration</span><h2>Access Control</h2><p>Manage identities and permissions without entering the CEO's operating workspace.</p></div><div class="account-head-actions"><button class="btn" type="button" data-account-log-download>Download</button><button class="btn primary" type="button" data-view="Accounts">Accounts</button></div></div>
+    <section class="admin-boundary"><div><span>Separate Identity</span><b>Super Admin controls the system, not executive decisions.</b></div><p>Sign out, then log in with the CEO account to review projects, approvals, finance, and business performance.</p></section>
     <div class="grid cols-4 admin-metrics">${metric("Accounts", userAccounts.length, "Created identities", "Accounts")}${metric("Active", active, "Can access the system", "Accounts")}${metric("Suspended", suspended, "Access blocked", "Accounts")}${metric("Admins", administrators, "System administrators", "Accounts")}</div>
-    <section class="account-admin-section"><div class="client-section-title"><div><span>Governance</span><h3>Account Activity</h3></div><small>${recent.length} recent change${recent.length === 1 ? "" : "s"}</small></div>${recent.length ? `<div class="account-activity-list">${recent.map(item => `<article><div><b>${escapeHtml(item.action)}</b><small>${escapeHtml(item.detail)}</small></div><time>${escapeHtml(item.at)}</time></article>`).join("")}</div>` : `<div class="empty">Account changes will appear here.</div>`}</section>`;
+    <section class="account-admin-section"><div class="client-section-title"><div><span>Governance</span><h3>Account Activity</h3></div><small>${recent.length} recent change${recent.length === 1 ? "" : "s"}</small></div>${recent.length ? `<div class="account-activity-list">${recent.map(item => `<article><div><b>${escapeHtml(item.action)}</b><small>${escapeHtml(item.detail)}${item.actor ? ` · ${escapeHtml(item.actor)}` : ""}</small></div><time>${escapeHtml(item.at)}</time></article>`).join("")}</div>` : `<div class="empty">Account changes will appear here.</div>`}</section>`;
 }
 
 function accountAdministrationPage() {
@@ -2971,19 +3216,19 @@ function accountAdministrationPage() {
     <div><span>Role</span><b>${escapeHtml(account.role)}</b></div>
     <div><span>Scope</span><b>${escapeHtml(accessScopeLabel(account.scope))}</b></div>
     <div class="account-directory-pages"><span>Pages</span><p class="account-page-list">${accountAccessPages(account.role).map(page => `<i>${escapeHtml(page)}</i>`).join("")}</p></div>
-    <div class="account-directory-status"><span>Status</span>${chip(account.status, account.status === "ACTIVE" ? "good" : account.status === "SUSPENDED" ? "risk" : "warn")}</div>
-    <div class="account-directory-action">${account.switchable ? `<span class="account-protected">Protected</span>` : `<button class="btn compact" type="button" data-account-status="${escapeHtml(account.id)}">${account.status === "SUSPENDED" ? "Activate" : "Suspend"}</button>`}</div>
+    <div class="account-directory-status"><span>Status</span>${accountDisplayStatus(account)}</div>
+    <div class="account-directory-action"><button class="btn compact" type="button" data-account-edit="${escapeHtml(account.id)}">Edit</button><button class="btn compact" type="button" data-account-reset="${escapeHtml(account.id)}">Reset</button>${account.switchable ? `<span class="account-protected">Owner</span>` : `<button class="btn compact" type="button" data-account-status="${escapeHtml(account.id)}">${account.status === "SUSPENDED" ? "Activate" : "Suspend"}</button>`}</div>
   </article>`).join("");
   const initialRole = "ACCOUNT EXECUTIVE";
   const initialPages = accountAccessPages(initialRole);
-  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">Super Admin</span><h2>User Accounts</h2><p>Create one identity per person and assign one role with a clear record scope.</p></div>${chip("Admin only", "active")}</div>
+  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">Super Admin</span><h2>User Accounts</h2><p>Create one identity per person and assign one role with a clear record scope.</p></div><div class="account-head-actions">${chip("Admin only", "active")}<button class="btn" type="button" data-account-log-download>Download</button></div></div>
     <section class="admin-boundary compact"><div><span>Permission Rule</span><b>Role determines pages. Scope determines which records appear.</b></div><p>Created accounts never inherit the CEO identity or Super Admin controls. Prototype accounts are stored in this browser until secure sign-in is connected.</p></section>
     <section class="account-create-layout">
       <form id="accountCreateForm" class="account-create-form">
         <div class="client-section-title"><div><span>New User</span><h3>Create Account</h3></div><small>Role and access assignment</small></div>
         <div class="account-form-grid">
           <label><span>Full Name</span><input name="name" required autocomplete="off" placeholder="Employee name" /></label>
-          <label><span>Email</span><input name="email" type="email" required autocomplete="off" placeholder="name@company.com" /></label>
+          <label><span>Company Email</span><input name="email" type="email" required autocomplete="off" placeholder="name@company.com" /></label>
           <label><span>Role</span><select name="role" data-account-role>${accountRoleOptions(initialRole)}</select></label>
           <fieldset><legend>Record Scope</legend><label><input type="radio" name="scope" value="ASSIGNED" checked /> Assigned</label><label><input type="radio" name="scope" value="TEAM" /> Team</label><label><input type="radio" name="scope" value="ALL" /> All</label></fieldset>
         </div>
@@ -10388,8 +10633,8 @@ function bind() {
     });
   });
   document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => { state.tab = b.dataset.tab; state.supplierSourceReturn = false; render(); }));
-  const accountSelect = document.getElementById("accountSelect");
-  accountSelect?.addEventListener("change", event => activateAccount(event.target.value));
+  document.querySelectorAll("[data-account-logout]").forEach(button => button.addEventListener("click", logoutAccount));
+  document.querySelectorAll("[data-account-log-download]").forEach(button => button.addEventListener("click", downloadAccountActivityLog));
   const accountCreateForm = document.getElementById("accountCreateForm");
   if (accountCreateForm) {
     const roleField = accountCreateForm.querySelector("[data-account-role]");
@@ -10402,7 +10647,7 @@ function bind() {
     };
     roleField?.addEventListener("change", updateAccessPreview);
     accountCreateForm.querySelectorAll('input[name="scope"]').forEach(field => field.addEventListener("change", updateAccessPreview));
-    accountCreateForm.addEventListener("submit", event => {
+    accountCreateForm.addEventListener("submit", async event => {
       event.preventDefault();
       if (!isSuperAdminMode()) return;
       const formData = new FormData(accountCreateForm);
@@ -10419,8 +10664,10 @@ function bind() {
         return;
       }
       emailField?.setCustomValidity("");
+      const password = generateTemporaryPassword();
+      const id = `account-${Date.now()}`;
       userAccounts.push({
-        id:`account-${Date.now()}`,
+        id,
         name,
         email,
         department:accountDepartmentForRole(role),
@@ -10428,14 +10675,12 @@ function bind() {
         scope,
         status:"ACTIVE",
         switchable:false,
+        passwordHash:await digestPassword(password),
+        mustChangePassword:true,
         createdAt:new Date().toISOString().slice(0, 10)
       });
-      accountActivity.unshift({
-        action:"Account created",
-        detail:`${name} · ${role} · ${accessScopeLabel(scope)}`,
-        at:new Date().toLocaleString("en-PH", { dateStyle:"medium", timeStyle:"short" })
-      });
-      persistUserAccounts();
+      recordAccountActivity("Account created", `${name} · ${role} · ${accessScopeLabel(scope)}`, id);
+      state.generatedAccountCredentials = { name, email, password, reason:"Account created" };
       render();
     });
   }
@@ -10444,13 +10689,67 @@ function bind() {
     const account = userAccounts.find(item => item.id === button.dataset.accountStatus);
     if (!account || account.switchable) return;
     account.status = account.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED";
-    accountActivity.unshift({
-      action:account.status === "ACTIVE" ? "Account activated" : "Account suspended",
-      detail:`${account.name} · ${account.role}`,
-      at:new Date().toLocaleString("en-PH", { dateStyle:"medium", timeStyle:"short" })
-    });
-    persistUserAccounts();
+    recordAccountActivity(account.status === "ACTIVE" ? "Account activated" : "Account suspended", `${account.name} · ${account.role}`, account.id);
     render();
+  }));
+  document.querySelectorAll("[data-account-edit]").forEach(button => button.addEventListener("click", () => {
+    if (!isSuperAdminMode()) return;
+    state.accountEditId = button.dataset.accountEdit;
+    render();
+  }));
+  document.querySelectorAll("[data-account-edit-close]").forEach(button => button.addEventListener("click", event => {
+    if (button.classList.contains("review-backdrop") && event.target !== button) return;
+    state.accountEditId = null;
+    render();
+  }));
+  const accountEditForm = document.getElementById("accountEditForm");
+  accountEditForm?.addEventListener("submit", event => {
+    event.preventDefault();
+    if (!isSuperAdminMode()) return;
+    const account = userAccounts.find(item => item.id === state.accountEditId);
+    if (!account) return;
+    const formData = new FormData(accountEditForm);
+    const name = normalizeCell(formData.get("name"));
+    const email = normalizeCell(formData.get("email")).toLowerCase();
+    const role = normalizeCell(formData.get("role"));
+    const scope = normalizeCell(formData.get("scope")) || "ASSIGNED";
+    const duplicate = userAccounts.some(item => item.id !== account.id && keyCell(item.email) === keyCell(email));
+    if (!name || !email || !availableRoles.includes(role) || duplicate) {
+      const emailField = accountEditForm.querySelector('input[name="email"]');
+      if (duplicate) {
+        emailField?.setCustomValidity("An account already uses this email address.");
+        emailField?.reportValidity();
+      }
+      return;
+    }
+    const previous = `${account.name} · ${account.email} · ${account.role} · ${accessScopeLabel(account.scope)}`;
+    Object.assign(account, { name, email, role, scope, department:accountDepartmentForRole(role) });
+    state.accountEditId = null;
+    recordAccountActivity("Account updated", `${previous} → ${name} · ${email} · ${role} · ${accessScopeLabel(scope)}`, account.id);
+    render();
+  });
+  document.querySelectorAll("[data-account-reset]").forEach(button => button.addEventListener("click", async () => {
+    if (!isSuperAdminMode()) return;
+    const account = userAccounts.find(item => item.id === button.dataset.accountReset);
+    if (!account) return;
+    const password = generateTemporaryPassword();
+    account.passwordHash = await digestPassword(password);
+    delete account.temporaryPassword;
+    account.mustChangePassword = true;
+    recordAccountActivity("Password reset", `${account.name} · ${account.email}`, account.id);
+    state.generatedAccountCredentials = { name:account.name, email:account.email, password, reason:"Password reset" };
+    render();
+  }));
+  document.querySelectorAll("[data-account-credentials-close]").forEach(button => button.addEventListener("click", event => {
+    if (button.classList.contains("review-backdrop") && event.target !== button) return;
+    state.generatedAccountCredentials = null;
+    render();
+  }));
+  document.querySelectorAll("[data-account-password-copy]").forEach(button => button.addEventListener("click", async () => {
+    const credentials = state.generatedAccountCredentials;
+    if (!credentials) return;
+    await navigator.clipboard.writeText(`Email: ${credentials.email}\nTemporary password: ${credentials.password}`);
+    button.textContent = "Copied";
   }));
   document.querySelectorAll("[data-billing-create]").forEach(button => button.addEventListener("click", () => {
     if (!billingCanManage()) return;
