@@ -147,7 +147,6 @@ const roles = {
 };
 
 const roleDepartments = [
-  { name:"System Administration", roles:["SUPER ADMIN"] },
   { name:"Executive Department", roles:["CEO", "COO"] },
   { name:"New Business & Accounts", roles:["ACCOUNTS HEAD", "ACCOUNT MANAGER", "ACCOUNT EXECUTIVE"] },
   { name:"Production & Implementation", roles:["PRODUCTION HEAD", "PROJECT MANAGER", "PROJECT COORDINATOR"] },
@@ -159,15 +158,15 @@ const roleDepartments = [
 const availableRoles = roleDepartments.flatMap(department => department.roles);
 
 const defaultUserAccounts = [
-  { id:"account-super-admin", name:"Mia Santos", email:"superadmin@spotlight.local", department:"System Administration", role:"SUPER ADMIN", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-09-29", temporaryPassword:"SA!7K2Q9mX4", mustChangePassword:true },
   { id:"account-ceo", name:"Mia Santos", email:"ceo@spotlight.local", department:"Executive Department", role:"CEO", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-09-29", temporaryPassword:"CEO!9M4rX2K", mustChangePassword:true }
 ];
-const userAccounts = readStoredJson(accountStorageKey, defaultUserAccounts).map(account => ({
+const userAccounts = readStoredJson(accountStorageKey, defaultUserAccounts).filter(account => account.role !== "SUPER ADMIN" && account.id !== "account-super-admin").map(account => ({
   scope:"ASSIGNED",
   status:"ACTIVE",
   mustChangePassword:true,
   ...account
 }));
+if (!userAccounts.some(account => account.role === "CEO")) userAccounts.unshift({ ...defaultUserAccounts[0] });
 const accountActivity = readStoredJson(accountActivityStorageKey, []);
 
 userAccounts.forEach(account => {
@@ -186,11 +185,7 @@ function activeAccount() {
 }
 
 function isSuperAdminMode() {
-  return activeAccount()?.role === "SUPER ADMIN";
-}
-
-function switchableAccountOptions() {
-  return userAccounts.filter(account => account.switchable && account.status === "ACTIVE").map(account => `<option value="${escapeHtml(account.id)}" ${account.id === state.activeAccountId ? "selected" : ""}>${escapeHtml(account.role)}</option>`).join("");
+  return activeAccount()?.role === "CEO" && state.ownerMode === "ADMIN";
 }
 
 function generateTemporaryPassword() {
@@ -525,6 +520,7 @@ const dashboardSeed = {
 const state = {
   view: "Dashboard",
   role: "CEO",
+  ownerMode: "CEO",
   activeAccountId: "account-ceo",
   authenticatedAccountId: sessionStorage.getItem(accountSessionStorageKey) || localStorage.getItem(accountPersistentStorageKey) || "",
   authMessage: "",
@@ -578,8 +574,9 @@ if (!userAccounts.some(account => account.id === state.authenticatedAccountId &&
   localStorage.removeItem(accountPersistentStorageKey);
 }
 if (state.authenticatedAccountId) state.activeAccountId = state.authenticatedAccountId;
-state.role = canonicalRole(activeAccount()?.role || "CEO");
-if (!availableRoles.includes(state.role)) state.role = "CEO";
+state.ownerMode = activeAccount()?.role === "CEO" && state.ownerMode === "ADMIN" ? "ADMIN" : "CEO";
+state.role = state.ownerMode === "ADMIN" ? "SUPER ADMIN" : canonicalRole(activeAccount()?.role || "CEO");
+if (!availableRoles.includes(state.role) && state.role !== "SUPER ADMIN") state.role = "CEO";
 persistUserAccounts();
 if (!db.projects.some(item => item.id === state.selectedProjectId)) {
   state.selectedProjectId = db.projects.find(item => item.stage !== "LOST")?.id || db.projects[0]?.id || "";
@@ -592,6 +589,7 @@ function persistUiState() {
     localStorage.setItem(uiStateStorageKey, JSON.stringify({
       view: state.view,
       role: state.role,
+      ownerMode: state.ownerMode,
       activeAccountId: state.activeAccountId,
       selectedProjectId: state.selectedProjectId,
       tab: state.tab,
@@ -788,7 +786,7 @@ function accountLoginPage() {
         ${state.authMessage ? `<p class="auth-feedback ${state.authMessageTone === "success" ? "is-success" : "is-error"}" role="status">${escapeHtml(state.authMessage)}</p>` : ""}
         <button class="btn primary" type="submit">Login</button>
       </form>
-      ${ownerAccess.length ? `<details class="auth-bootstrap"><summary>Demo owner access</summary><p>This public prototype uses browser-only credentials. Replace these addresses when company authentication is connected.</p>${ownerAccess.map(account => `<div><span>${escapeHtml(account.role)}</span><b>${escapeHtml(account.email)}</b><code>${escapeHtml(account.temporaryPassword)}</code></div>`).join("")}</details>` : ""}
+      ${ownerAccess.length ? `<details class="auth-bootstrap"><summary>Demo CEO access</summary><p>This public prototype uses browser-only credentials. Replace this address when company authentication is connected.</p>${ownerAccess.map(account => `<div><span>${escapeHtml(account.role)}</span><b>${escapeHtml(account.email)}</b><code>${escapeHtml(account.temporaryPassword)}</code></div>`).join("")}</details>` : ""}
     </section>
   </main>`;
 }
@@ -817,6 +815,7 @@ function passwordMeetsRequirements(password) {
 function resetWorkspaceForAccount(account, remember = false) {
   state.authenticatedAccountId = account.id;
   state.activeAccountId = account.id;
+  state.ownerMode = "CEO";
   state.role = canonicalRole(account.role);
   state.view = "Dashboard";
   state.tab = "Overview";
@@ -879,7 +878,7 @@ function bindAuthentication() {
       accountActivity.unshift({ action:"Password reset requested", detail:`${account.name} · ${account.email}`, subjectId:account.id, actor:email, at:account.passwordResetRequestedAt });
       persistUserAccounts();
     }
-    state.authMessage = "If this email belongs to an active account, the request is now with the Super Admin.";
+    state.authMessage = "If this email belongs to an active account, the request is now visible in CEO Admin mode.";
     state.authMessageTone = "success";
     render();
   });
@@ -896,7 +895,7 @@ function bindAuthentication() {
       return;
     }
     if (account.status !== "ACTIVE") {
-      state.authMessage = "This account is suspended. Please contact the Super Admin.";
+      state.authMessage = "This account is suspended. Please contact the CEO account owner.";
       state.authMessageTone = "error";
       render();
       return;
@@ -969,9 +968,10 @@ function render() {
         <div class="brand"><div class="mark"><img src="assets/spotlight-logo.png?v=4" alt="" /></div><div><strong>Spotlight OS</strong><span>Project-first operating layer</span></div></div>
         <div class="rolebox account-session">
           <label>Signed in as</label>
-          <b>${escapeHtml(account.role)}</b>
-          <small>${escapeHtml(account.email)}</small>
-          <button class="btn compact" type="button" data-account-logout>Switch</button>
+          <b>${escapeHtml(account.name)}</b>
+          <small>${escapeHtml(account.role)} account · ${escapeHtml(account.email)}</small>
+          ${account.role === "CEO" ? `<div class="owner-mode-switch" role="group" aria-label="Workspace mode"><button class="${state.ownerMode === "CEO" ? "active" : ""}" type="button" data-owner-mode="CEO">CEO</button><button class="${state.ownerMode === "ADMIN" ? "active" : ""}" type="button" data-owner-mode="ADMIN">Admin</button></div>` : ""}
+          <button class="btn compact account-logout" type="button" data-account-logout>Logout</button>
         </div>
         ${isSuperAdminMode() ? "" : globalSearchField()}
         <nav class="nav">${navItems.map(v => v === "Projects" ? projectNavigationAccordion() : `<button class="${state.view === v ? "active" : ""}" data-view="${v}">${icon(v)} ${v}</button>`).join("")}</nav>
@@ -981,7 +981,7 @@ function render() {
         <div class="topbar">
           <button class="sidebar-toggle" type="button" data-sidebar-toggle="true" aria-label="${state.sidebarHidden ? "Show navigation" : "Hide navigation"}" title="${state.sidebarHidden ? "Show navigation" : "Hide navigation"}" aria-pressed="${state.sidebarHidden}"><span aria-hidden="true">${state.sidebarHidden ? "›" : "‹"}</span></button>
           <div class="topbar-context"><span>${escapeHtml(state.view === "Project 360" ? project(state.selectedProjectId)?.name || "Project" : state.view)}</span></div>
-          <div class="userpill"><div class="avatar">${state.role[0]}</div><div><strong>${escapeHtml(account?.name || currentUser())}</strong><br><small>${escapeHtml(account?.role || state.role)}</small></div></div>
+          <div class="userpill"><div class="avatar">${isSuperAdminMode() ? "A" : state.role[0]}</div><div><strong>${escapeHtml(account?.name || currentUser())}</strong><br><small>${escapeHtml(isSuperAdminMode() ? "Admin mode" : account?.role || state.role)}</small></div></div>
         </div>
         ${state.view === "Dashboard" ? `<section class="hero"><div><h1>${dashboardTitle()}</h1><p>${dashboardProfile().question}</p></div></section>` : ""}
         <div class="content">${views[state.view]()}</div>
@@ -1100,13 +1100,13 @@ function currentUser() {
 }
 
 function dashboardTitle() {
-  if (isSuperAdminMode()) return "Super Admin Dashboard";
+  if (isSuperAdminMode()) return "Admin Dashboard";
   const clean = state.role.replace("SUPER ADMIN / ", "").replace(" / MULTIMEDIA ARTIST", "");
   return `${clean} Dashboard`;
 }
 
 function dashboardProfile(role = state.role) {
-  if (canonicalRole(role) === "SUPER ADMIN") return { question:"Are user accounts, access assignments, and system controls properly governed?", primary:[], secondary:[], restricted:"Business decisions remain under the separate CEO account." };
+  if (canonicalRole(role) === "SUPER ADMIN") return { question:"Are user accounts, access assignments, and system controls properly governed?", primary:[], secondary:[], restricted:"Switch to CEO mode for projects, approvals, finance, and business decisions." };
   const profileKey = {
     "CEO":"SUPER ADMIN / CEO",
     "COO":"COO / OPERATIONS HEAD",
@@ -3255,17 +3255,16 @@ function downloadAccountActivityLog() {
 
 function superAdminDashboard() {
   const active = userAccounts.filter(account => account.status === "ACTIVE").length;
-  const administrators = userAccounts.filter(account => account.role === "SUPER ADMIN" && account.status === "ACTIVE").length;
   const suspended = userAccounts.filter(account => account.status === "SUSPENDED").length;
   const recent = accountActivity.slice(0, 5);
-  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">System Administration</span><h2>Access Control</h2><p>Manage identities and permissions without entering the CEO's operating workspace.</p></div><div class="account-head-actions"><button class="btn" type="button" data-account-log-download>Download</button><button class="btn primary" type="button" data-view="Accounts">Accounts</button></div></div>
-    <section class="admin-boundary"><div><span>Separate Identity</span><b>Super Admin controls the system, not executive decisions.</b></div><p>Sign out, then log in with the CEO account to review projects, approvals, finance, and business performance.</p></section>
-    <div class="grid cols-4 admin-metrics">${metric("Accounts", userAccounts.length, "Created identities", "Accounts")}${metric("Active", active, "Can access the system", "Accounts")}${metric("Suspended", suspended, "Access blocked", "Accounts")}${metric("Admins", administrators, "System administrators", "Accounts")}</div>
+  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">Admin Mode</span><h2>Access Control</h2><p>Manage identities and permissions from your CEO account without mixing them into executive operations.</p></div><div class="account-head-actions"><button class="btn" type="button" data-account-log-download>Download</button><button class="btn primary" type="button" data-view="Accounts">Accounts</button></div></div>
+    <section class="admin-boundary"><div><span>Mode Boundary</span><b>Admin mode controls the system, not executive decisions.</b></div><p>Use the CEO / Admin switch in the navigation pane to return to projects, approvals, finance, and business performance.</p></section>
+    <div class="grid cols-4 admin-metrics">${metric("Accounts", userAccounts.length, "Created identities", "Accounts")}${metric("Active", active, "Can access the system", "Accounts")}${metric("Suspended", suspended, "Access blocked", "Accounts")}${metric("Owner", "CEO", "Controls Admin mode", "Accounts")}</div>
     <section class="account-admin-section"><div class="client-section-title"><div><span>Governance</span><h3>Account Activity</h3></div><small>${recent.length} recent change${recent.length === 1 ? "" : "s"}</small></div>${recent.length ? `<div class="account-activity-list">${recent.map(item => `<article><div><b>${escapeHtml(item.action)}</b><small>${escapeHtml(item.detail)}${item.actor ? ` · ${escapeHtml(item.actor)}` : ""}</small></div><time>${escapeHtml(item.at)}</time></article>`).join("")}</div>` : `<div class="empty">Account changes will appear here.</div>`}</section>`;
 }
 
 function accountAdministrationPage() {
-  if (!isSuperAdminMode()) return `<section class="finance-restricted"><span>Restricted</span><h2>Accounts</h2><p>Only the separate Super Admin account can manage users and access.</p></section>`;
+  if (!isSuperAdminMode()) return `<section class="finance-restricted"><span>Restricted</span><h2>Accounts</h2><p>Switch your CEO account to Admin mode to manage users and access.</p></section>`;
   const directory = userAccounts.map(account => `<article class="account-directory-row">
     <div class="account-directory-user"><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.email)}</small></div>
     <div><span>Department</span><b>${escapeHtml(account.department)}</b></div>
@@ -3277,8 +3276,8 @@ function accountAdministrationPage() {
   </article>`).join("");
   const initialRole = "ACCOUNT EXECUTIVE";
   const initialPages = accountAccessPages(initialRole);
-  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">Super Admin</span><h2>User Accounts</h2><p>Create one identity per person and assign one role with a clear record scope.</p></div><div class="account-head-actions">${chip("Admin only", "active")}<button class="btn" type="button" data-account-log-download>Download</button></div></div>
-    <section class="admin-boundary compact"><div><span>Permission Rule</span><b>Role determines pages. Scope determines which records appear.</b></div><p>Created accounts never inherit the CEO identity or Super Admin controls. Prototype accounts are stored in this browser until secure sign-in is connected.</p></section>
+  return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">Admin Mode</span><h2>User Accounts</h2><p>Create one identity per person and assign one role with a clear record scope.</p></div><div class="account-head-actions">${chip("CEO controlled", "active")}<button class="btn" type="button" data-account-log-download>Download</button></div></div>
+    <section class="admin-boundary compact"><div><span>Permission Rule</span><b>Role determines pages. Scope determines which records appear.</b></div><p>Created accounts never inherit CEO or Admin controls. Prototype accounts are stored in this browser until secure sign-in is connected.</p></section>
     <section class="account-create-layout">
       <form id="accountCreateForm" class="account-create-form">
         <div class="client-section-title"><div><span>New User</span><h3>Create Account</h3></div><small>Role and access assignment</small></div>
@@ -10596,6 +10595,22 @@ function bind() {
       render();
     });
   });
+  document.querySelectorAll("[data-owner-mode]").forEach(button => button.addEventListener("click", () => {
+    const account = activeAccount();
+    const nextMode = button.dataset.ownerMode === "ADMIN" ? "ADMIN" : "CEO";
+    if (account?.role !== "CEO" || state.ownerMode === nextMode) return;
+    const previousMode = state.ownerMode;
+    state.ownerMode = nextMode;
+    state.role = nextMode === "ADMIN" ? "SUPER ADMIN" : "CEO";
+    state.view = "Dashboard";
+    state.tab = "Overview";
+    state.search = "";
+    state.accountEditId = null;
+    state.generatedAccountCredentials = null;
+    recordAccountActivity("Mode switched", `${previousMode} → ${nextMode}`, account.id);
+    persistUiState();
+    render();
+  }));
   document.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => {
     state.view = b.dataset.view;
     if (state.view === "Liquidations") {
