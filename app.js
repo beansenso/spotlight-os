@@ -2,6 +2,7 @@ const peso = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP"
 const pesoDetailed = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const settings = {
+  annualRevenueTarget: 0,
   targetGrossMargin: 0.30,
   liquidationDeadlineMetroDays: 7,
   liquidationDeadlineProvincialDays: 14,
@@ -14,7 +15,52 @@ const settings = {
   crpExpenseThreshold: 0.60
 };
 
-const dashboardToday = "2026-09-03";
+const cleanDatasetVersionKey = "spotlightDatasetVersion";
+const cleanDatasetVersion = "2026-09-29-testing-baseline-v1";
+const businessDataStorageKey = "spotlightBusinessData";
+if (localStorage.getItem(cleanDatasetVersionKey) !== cleanDatasetVersion) {
+  [
+    businessDataStorageKey,
+    "spotlightAccountActivity",
+    "spotlightUiState",
+    "spotlightCeoCards",
+    "spotlightWidgetLayout",
+    "spotlightWidgetHeights",
+    "spotlightExpandedProjects",
+    "spotlightExpandedApprovals",
+    "spotlightUploadedCeVersions",
+    "spotlightUploadedCeFileRecords",
+    "spotlightUploadedCrpBatches",
+    "spotlightUploadedCrpFileRecords",
+    "spotlightCrpLineDecisions",
+    "spotlightCrpCounterparties",
+    "spotlightOpenCrpRows",
+    "spotlightFundReleaseReceiptRecords",
+    "spotlightFundReleaseManualItems",
+    "spotlightFundReleaseLineNotes",
+    "spotlightLiquidationScenarioRecords",
+    "spotlightLiquidationScenarioActions",
+    "spotlightLiquidationSupplierActions",
+    "spotlightLiquidationManualSuppliers",
+    "spotlightLiquidationPayeeClassifications",
+    "spotlightGeneratedBillingInvoices",
+    "spotlightArchivedBillingInvoices",
+    "spotlightBillingCollections",
+    "spotlightBillingInvoiceSequence",
+    "spotlightPostAuditScorecards",
+    "spotlightCreativeDeliverables",
+    "spotlightRevenueYear"
+  ].forEach(key => localStorage.removeItem(key));
+  localStorage.setItem(cleanDatasetVersionKey, cleanDatasetVersion);
+}
+
+const dashboardTodayParts = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Manila",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+}).formatToParts(new Date()).reduce((parts, item) => ({ ...parts, [item.type]:item.value }), {});
+const dashboardToday = `${dashboardTodayParts.year}-${dashboardTodayParts.month}-${dashboardTodayParts.day}`;
 
 const ceoCardOptions = [
   "Revenue YTD",
@@ -149,7 +195,7 @@ const roles = {
 const roleDepartments = [
   { name:"Executive Department", roles:["CEO", "COO"] },
   { name:"New Business & Accounts", roles:["ACCOUNTS HEAD", "ACCOUNT MANAGER", "ACCOUNT EXECUTIVE"] },
-  { name:"Production & Implementation", roles:["PRODUCTION HEAD", "PROJECT MANAGER", "PROJECT COORDINATOR"] },
+  { name:"Production & Implementation", roles:["PRODUCTION HEAD", "EVENT MANAGER", "EVENT OFFICER", "PROJECT MANAGER", "PROJECT COORDINATOR"] },
   { name:"Creatives", roles:["CREATIVE DIRECTOR", "ASSOCIATE CREATIVE DIRECTOR", "ART LEAD", "COPYWRITER", "GRAPHIC ARTIST", "3D ARTIST"] },
   { name:"Admin & HR", roles:["ADMIN & HR OFFICER"] },
   { name:"Audit & Finance", roles:["FINANCE LEAD", "FINANCE OFFICER", "FINANCE COMPLIANCE & ASSISTANT"] }
@@ -158,16 +204,27 @@ const roleDepartments = [
 const availableRoles = roleDepartments.flatMap(department => department.roles);
 
 const defaultUserAccounts = [
-  { id:"account-ceo", name:"Mia Santos", email:"ceo@spotlight.local", department:"Executive Department", role:"CEO", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-09-29", temporaryPassword:"CEO!9M4rX2K", mustChangePassword:true }
+  { id:"account-vincent-julian", name:"Vincent Julien", email:"vince@takethespotlight.com", department:"Executive Department", role:"CEO", scope:"ALL", status:"ACTIVE", switchable:true, createdAt:"2026-10-03", passwordHash:"486cb3c9d32714c6d6e54902bff49e6f5967618847cf523e8433cb5a578874ea", mustChangePassword:true }
 ];
-const userAccounts = readStoredJson(accountStorageKey, defaultUserAccounts).filter(account => account.role !== "SUPER ADMIN" && account.id !== "account-super-admin").map(account => ({
+const storedUserAccounts = readStoredJson(accountStorageKey, defaultUserAccounts);
+const legacyOwnerAccounts = storedUserAccounts.filter(account => account.id === "account-ceo" || keyCell(account.email) === keyCell("ceo@spotlight.local") || keyCell(account.name) === keyCell("Mia Santos"));
+let vincentNameUpdated = false;
+const userAccounts = storedUserAccounts.filter(account => account.role !== "SUPER ADMIN" && account.id !== "account-super-admin" && !legacyOwnerAccounts.includes(account)).map(account => {
+  const isVincent = keyCell(account.email) === keyCell("vince@takethespotlight.com");
+  if (isVincent && account.name !== "Vincent Julien") vincentNameUpdated = true;
+  return {
   scope:"ASSIGNED",
   status:"ACTIVE",
   mustChangePassword:true,
-  ...account
-}));
+  ...account,
+  ...(isVincent ? { name:"Vincent Julien", role:"CEO", department:"Executive Department", scope:"ALL", status:"ACTIVE", switchable:true } : {}),
+  scope:roleDefaultScope(account.role)
+  };
+});
 if (!userAccounts.some(account => account.role === "CEO")) userAccounts.unshift({ ...defaultUserAccounts[0] });
 const accountActivity = readStoredJson(accountActivityStorageKey, []);
+if (legacyOwnerAccounts.length) accountActivity.unshift({ action:"Account deleted", detail:"Mia Santos · legacy CEO account", subjectId:"account-ceo", actor:"System migration", at:new Date().toLocaleString("en-PH", { dateStyle:"medium", timeStyle:"short" }) });
+if (vincentNameUpdated) accountActivity.unshift({ action:"Account updated", detail:"Vincent Julian → Vincent Julien", subjectId:"account-vincent-julian", actor:"System migration", at:new Date().toLocaleString("en-PH", { dateStyle:"medium", timeStyle:"short" }) });
 
 userAccounts.forEach(account => {
   if (!account.passwordHash && !account.temporaryPassword) account.temporaryPassword = generateTemporaryPassword();
@@ -181,7 +238,7 @@ function persistUserAccounts() {
 
 function activeAccount() {
   const accountId = state.authenticatedAccountId || state.activeAccountId;
-  return userAccounts.find(account => account.id === accountId) || userAccounts.find(account => account.id === "account-ceo") || userAccounts[0];
+  return userAccounts.find(account => account.id === accountId) || userAccounts.find(account => account.role === "CEO" && account.switchable) || userAccounts[0];
 }
 
 function isSuperAdminMode() {
@@ -278,7 +335,7 @@ const roleMigrations = {
   "OPERATIONS LEAD":"PRODUCTION HEAD",
   "DIRECTOR FOR IMPLEMENTATION":"PRODUCTION HEAD",
   "EVENT MANAGER":"PROJECT MANAGER",
-  "EVENT OFFICER":"PROJECT COORDINATOR",
+  "EVENT OFFICER":"PROJECT MANAGER",
   "ART LEAD / CREATIVE DIRECTOR":"ART LEAD",
   "ART DIRECTOR":"ART LEAD",
   "GRAPHIC DESIGNER / MULTIMEDIA ARTIST":"GRAPHIC ARTIST",
@@ -304,7 +361,7 @@ const stages = ["LEAD", "QUALIFICATION", "BRIEFED", "COSTING", "PITCHING", "NEGO
 
 const db = {
   users: [
-    { id: "u1", name: "Mia Santos", role: "SUPER ADMIN / CEO" },
+    { id: "u1", name: "Vincent Julien", role: "SUPER ADMIN / CEO" },
     { id: "u2", name: "Paolo Reyes", role: "ACCOUNTS" },
     { id: "u3", name: "Lara Cruz", role: "IMPLEMENTATION / PRODUCTION" },
     { id: "u4", name: "June Ramos", role: "FINANCE CONTROL" },
@@ -335,7 +392,7 @@ const db = {
   ],
   qualifications: [
     { projectId: "p1", commercial: 82, probability: 65, clientValue: 86, complexity: 58, resourceLoad: 52, override: false },
-    { projectId: "p2", commercial: 68, probability: 42, clientValue: 74, complexity: 72, resourceLoad: 70, override: true, approver: "Mia Santos", reason: "Strategic year-end visibility with high repeat potential." },
+    { projectId: "p2", commercial: 68, probability: 42, clientValue: 74, complexity: 72, resourceLoad: 70, override: true, approver: "Vincent Julien", reason: "Strategic year-end visibility with high repeat potential." },
     { projectId: "p3", commercial: 78, probability: 92, clientValue: 72, complexity: 66, resourceLoad: 64, override: false }
   ],
   ceVersions: [
@@ -357,12 +414,12 @@ const db = {
   approvals: [
     { id: "a1", projectId: "p1", type: "Finance Validation", status: "Approved", approver: "June Ramos", at: "2026-07-03 10:11", comments: "VAT, ASF, and totals checked." },
     { id: "a2", projectId: "p1", type: "Implementation Validation", status: "Approved", approver: "Lara Cruz", at: "2026-07-03 16:34", comments: "Supplier costs realistic; added ingress buffer." },
-    { id: "a3", projectId: "p1", type: "Management Approval", status: "Approved", approver: "Mia Santos", at: "2026-07-04 09:22", comments: "Margin acceptable." },
-    { id: "a4", projectId: "p2", type: "Management Approval", status: "Pending", approver: "Mia Santos", at: "", comments: "Below benchmark pending strategic approval." }
+    { id: "a3", projectId: "p1", type: "Management Approval", status: "Approved", approver: "Vincent Julien", at: "2026-07-04 09:22", comments: "Margin acceptable." },
+    { id: "a4", projectId: "p2", type: "Management Approval", status: "Pending", approver: "Vincent Julien", at: "", comments: "Below benchmark pending strategic approval." }
   ],
   budgetRequests: [
     { id: "br1", projectId: "p1", holder: "PRODUCTION / IMPLEMENTATION", requestor: "Lara Cruz", category: "Fabrication", amount: 100000, qty: 1, unitCost: 100000, expectedAmount: 100000, releaseType: "Cheque", recipient: "BuildRight Fabrication", quotation: "BuildRight quotation.pdf", status: "RELEASED", dateRequired: "2026-08-10", exception: false, sourceUploadId: "crp1", sourceVersion: "CRP V1", sourceFile: "2026-UNILAB-0001_CRP-V1.xlsx" },
-    { id: "br2", projectId: "p1", holder: "PROCUREMENT", requestor: "Mia Santos", category: "Supplier Downpayment", amount: 200000, qty: 1, unitCost: 200000, expectedAmount: 200000, releaseType: "Cheque", recipient: "ProAV Manila", quotation: "ProAV Manila quotation.pdf", status: "RELEASED", dateRequired: "2026-08-11", exception: false, sourceUploadId: "crp1", sourceVersion: "CRP V1", sourceFile: "2026-UNILAB-0001_CRP-V1.xlsx" },
+    { id: "br2", projectId: "p1", holder: "PROCUREMENT", requestor: "Vincent Julien", category: "Supplier Downpayment", amount: 200000, qty: 1, unitCost: 200000, expectedAmount: 200000, releaseType: "Cheque", recipient: "ProAV Manila", quotation: "ProAV Manila quotation.pdf", status: "RELEASED", dateRequired: "2026-08-11", exception: false, sourceUploadId: "crp1", sourceVersion: "CRP V1", sourceFile: "2026-UNILAB-0001_CRP-V1.xlsx" },
     { id: "br3", projectId: "p1", holder: "FIELD CASHIER", requestor: "Marco Dela Paz", category: "Manpower", amount: 50000, qty: 1, unitCost: 50000, expectedAmount: 50000, releaseType: "Cash", recipient: "Marco Dela Paz", quotation: "", status: "RELEASED", dateRequired: "2026-08-17", exception: false, sourceUploadId: "crp1", sourceVersion: "CRP V1", sourceFile: "2026-UNILAB-0001_CRP-V1.xlsx" },
     { id: "br4", projectId: "p3", holder: "FIELD CASHIER", requestor: "Marco Dela Paz", category: "Manpower", amount: 90000, qty: 1, unitCost: 90000, expectedAmount: 90000, releaseType: "Cash", recipient: "Marco Dela Paz", quotation: "", status: "UNDER REVIEW", dateRequired: "2026-09-04", exception: false, sourceUploadId: "crp2", sourceVersion: "CRP V1", sourceFile: "2026-JFC-0003_CRP-V1.xlsx" },
     { id: "br5", projectId: "p2", holder: "PRODUCTION / IMPLEMENTATION", requestor: "Lara Cruz", category: "Creative", amount: 180000, qty: 1, unitCost: 180000, expectedAmount: 180000, releaseType: "Cash", recipient: "Lara Cruz", quotation: "", status: "REQUESTED", dateRequired: "2026-09-02", exception: false, sourceUploadId: "crp3", sourceVersion: "CRP V1", sourceFile: "2026-AYALA-0002_CRP-V1.xlsx" },
@@ -375,7 +432,7 @@ const db = {
   ],
   releases: [
     { id: "rel1", projectId: "p1", requestId: "br1", employee: "Lara Cruz", payee: "BuildRight Fabrication", amount: 100000, date: "2026-08-10", mode: "Bank transfer", category: "Fabrication", status: "FOR LIQUIDATION" },
-    { id: "rel2", projectId: "p1", requestId: "br2", employee: "Mia Santos", payee: "ProAV Manila", amount: 200000, date: "2026-08-11", mode: "Bank transfer", category: "Technical", status: "DOCUMENTED" },
+    { id: "rel2", projectId: "p1", requestId: "br2", employee: "Vincent Julien", payee: "ProAV Manila", amount: 200000, date: "2026-08-11", mode: "Bank transfer", category: "Technical", status: "DOCUMENTED" },
     { id: "rel3", projectId: "p1", requestId: "br3", employee: "Marco Dela Paz", payee: "Field manpower", amount: 50000, date: "2026-08-17", mode: "Cash", category: "Manpower", status: "FOR LIQUIDATION" },
     { id: "rel4", projectId: "p3", requestId: "br4", employee: "Marco Dela Paz", payee: "Field manpower", amount: 70000, date: "2026-08-20", mode: "Cash", category: "Manpower", status: "OVERDUE" }
   ],
@@ -410,7 +467,7 @@ const db = {
   ],
   activity: [
     { projectId: "p1", at: "2026-06-04 09:10", user: "Paolo Reyes", action: "Project created", from: "", to: "LEAD", comment: "Generated 2026-UNILAB-0001." },
-    { projectId: "p1", at: "2026-07-04 09:22", user: "Mia Santos", action: "CE approved", from: "MANAGEMENT APPROVAL", to: "APPROVED FOR CLIENT", comment: "Approved CE V2." },
+    { projectId: "p1", at: "2026-07-04 09:22", user: "Vincent Julien", action: "CE approved", from: "MANAGEMENT APPROVAL", to: "APPROVED FOR CLIENT", comment: "Approved CE V2." },
     { projectId: "p1", at: "2026-08-17 11:43", user: "Finance Ops", action: "Fund released", from: "READY FOR RELEASE", to: "RELEASED", comment: "Cash advance released to Marco Dela Paz." },
     { projectId: "p1", at: "2026-08-25 14:06", user: "June Ramos", action: "Audit finding raised", from: "Submitted", to: "Under Audit", comment: "Missing receipt declaration required." },
     { projectId: "p3", at: "2026-08-28 09:00", user: "System", action: "Policy block", from: "For liquidation", to: "For Cash Return", comment: "New cash advance blocked until liquidation cleared or overridden." }
@@ -427,6 +484,16 @@ const db = {
     { projectId: "p3", type: "Permits", name: "Cebu Campus Permit Tracker", status: "Pending" }
   ]
 };
+
+const storedBusinessData = readStoredJson(businessDataStorageKey, null);
+Object.keys(db).forEach(key => {
+  if (!Array.isArray(db[key])) return;
+  db[key] = Array.isArray(storedBusinessData?.[key]) ? storedBusinessData[key] : [];
+});
+db.users = userAccounts
+  .filter(account => account.status === "ACTIVE")
+  .map(account => ({ id:account.id, name:account.name, role:account.role }));
+settings.annualRevenueTarget = Number(storedBusinessData?.settings?.annualRevenueTarget || 0);
 
 billingGeneratedInvoices.forEach(invoice => {
   if (invoice.source === "generated" && !invoice.document?.dataUrl) {
@@ -517,17 +584,60 @@ const dashboardSeed = {
   ]
 };
 
+dashboardSeed.monthlyRevenue = storedBusinessData?.dashboardSeed?.monthlyRevenue || {};
+[
+  "calendarItems",
+  "creativeJobs",
+  "operationsTasks",
+  "clientActions",
+  "procurementItems",
+  "warehouseItems",
+  "contentItems",
+  "adminItems"
+].forEach(key => {
+  dashboardSeed[key] = Array.isArray(storedBusinessData?.dashboardSeed?.[key]) ? storedBusinessData.dashboardSeed[key] : [];
+});
+
+function persistBusinessData() {
+  db.users = userAccounts
+    .filter(account => account.status === "ACTIVE")
+    .map(account => ({ id:account.id, name:account.name, role:account.role }));
+  const data = {
+    settings: { annualRevenueTarget: Number(settings.annualRevenueTarget || 0) },
+    dashboardSeed: {
+      monthlyRevenue: dashboardSeed.monthlyRevenue,
+      calendarItems: dashboardSeed.calendarItems,
+      creativeJobs: dashboardSeed.creativeJobs,
+      operationsTasks: dashboardSeed.operationsTasks,
+      clientActions: dashboardSeed.clientActions,
+      procurementItems: dashboardSeed.procurementItems,
+      warehouseItems: dashboardSeed.warehouseItems,
+      contentItems: dashboardSeed.contentItems,
+      adminItems: dashboardSeed.adminItems
+    }
+  };
+  Object.keys(db).forEach(key => {
+    if (Array.isArray(db[key])) data[key] = db[key];
+  });
+  try {
+    localStorage.setItem(businessDataStorageKey, JSON.stringify(data));
+  } catch (error) {
+    console.warn("Business data could not be saved in this browser.", error);
+  }
+}
+
 const state = {
   view: "Dashboard",
   role: "CEO",
   ownerMode: "CEO",
-  activeAccountId: "account-ceo",
+  activeAccountId: "account-vincent-julian",
   authenticatedAccountId: sessionStorage.getItem(accountSessionStorageKey) || localStorage.getItem(accountPersistentStorageKey) || "",
   authMessage: "",
   authMessageTone: "error",
   generatedAccountCredentials: null,
   accountEditId: null,
-  selectedProjectId: "p1",
+  accountDeleteId: null,
+  selectedProjectId: "",
   tab: "Overview",
   search: "",
   reviewSnapshot: null,
@@ -567,7 +677,7 @@ const state = {
   ...readStoredJson(uiStateStorageKey, {})
 };
 
-if (!userAccounts.some(account => account.id === state.activeAccountId && account.switchable && account.status === "ACTIVE")) state.activeAccountId = "account-ceo";
+if (!userAccounts.some(account => account.id === state.activeAccountId && account.switchable && account.status === "ACTIVE")) state.activeAccountId = userAccounts.find(account => account.role === "CEO" && account.switchable && account.status === "ACTIVE")?.id || userAccounts[0]?.id || "";
 if (!userAccounts.some(account => account.id === state.authenticatedAccountId && account.status === "ACTIVE")) {
   state.authenticatedAccountId = "";
   sessionStorage.removeItem(accountSessionStorageKey);
@@ -637,23 +747,16 @@ function supplierAccessProfile(role = state.role) {
   if (/^(CEO|COO)$/.test(canonical)) return { scope:"all", label:"Executive supplier view", canManage:false };
   if (/^FINANCE (LEAD|OFFICER)$/.test(canonical)) return { scope:"finance", label:"Supplier payables", canManage:true };
   if (/^FINANCE COMPLIANCE/.test(canonical)) return { scope:"audit", label:"Supplier compliance", canManage:false };
-  if (/^(ACCOUNTS HEAD|PRODUCTION HEAD)$/.test(canonical)) return { scope:"all", label:"Supplier portfolio", canManage:true };
-  if (/^(ACCOUNT MANAGER|ACCOUNT EXECUTIVE|PROJECT MANAGER|PROJECT COORDINATOR)$/.test(canonical)) return { scope:"assigned", label:"Project suppliers", canManage:true };
+  if (canonical === "PRODUCTION HEAD") return { scope:"all", label:"Supplier portfolio", canManage:true };
+  if (/^(PROJECT MANAGER|PROJECT COORDINATOR)$/.test(canonical)) return { scope:"assigned", label:"Project suppliers", canManage:true };
   return { scope:"none", label:"Suppliers", canManage:false };
 }
 function canViewApprovals(role = state.role) {
-  return /^(CEO|COO|ACCOUNTS HEAD|PRODUCTION HEAD|CREATIVE DIRECTOR|ASSOCIATE CREATIVE DIRECTOR|FINANCE COMPLIANCE & ASSISTANT)$/.test(canonicalRole(role));
+  return canonicalRole(role) !== "ADMIN & HR OFFICER";
 }
 function visibleNavigationItems() {
   if (isSuperAdminMode()) return ["Dashboard", "Accounts"];
-  const items = ["Dashboard"];
-  if (canViewApprovals()) items.push("Approvals");
-  if (!roleMatches(/^ADMIN & HR OFFICER$/)) items.push("Projects");
-  if (clientAccessProfile().scope !== "none") items.push("Clients");
-  if (canViewFinance()) items.push("Finance");
-  items.push("Liquidations");
-  if (supplierAccessProfile().scope !== "none") items.push("Suppliers");
-  return items;
+  return accountAccessPages(state.role);
 }
 function margin(revenue, cost) { return revenue ? (revenue - cost) / revenue : 0; }
 function score(q) { return Math.round((q.commercial + q.probability + q.clientValue + (100 - q.complexity) + (100 - q.resourceLoad)) / 5); }
@@ -824,6 +927,7 @@ function resetWorkspaceForAccount(account, remember = false) {
   state.authMessageTone = "error";
   state.generatedAccountCredentials = null;
   state.accountEditId = null;
+  state.accountDeleteId = null;
   state.reviewSnapshot = null;
   state.billingFormOpen = false;
   state.billingPreviewId = null;
@@ -958,6 +1062,7 @@ function render() {
     bindAuthentication();
     return;
   }
+  persistBusinessData();
   persistUiState();
   const navItems = visibleNavigationItems();
   const projectViewAllowed = navItems.includes("Projects");
@@ -983,7 +1088,7 @@ function render() {
           <div class="topbar-context"><span>${escapeHtml(state.view === "Project 360" ? project(state.selectedProjectId)?.name || "Project" : state.view)}</span></div>
           <div class="userpill"><div class="avatar">${isSuperAdminMode() ? "A" : state.role[0]}</div><div><strong>${escapeHtml(account?.name || currentUser())}</strong><br><small>${escapeHtml(isSuperAdminMode() ? "Admin mode" : account?.role || state.role)}</small></div></div>
         </div>
-        ${state.view === "Dashboard" ? `<section class="hero"><div><h1>${dashboardTitle()}</h1><p>${dashboardProfile().question}</p></div></section>` : ""}
+        ${state.view === "Dashboard" ? `<section class="hero"><div><h1>${dashboardGreeting()}</h1><p>${dashboardProfile().question}</p></div></section>` : ""}
         <div class="content">${views[state.view]()}</div>
         ${reviewSnapshotModal()}
         ${crpDecisionModal()}
@@ -1007,6 +1112,7 @@ function render() {
         ${projectDraftModal()}
         ${generatedAccountCredentialsModal()}
         ${accountEditModal()}
+        ${accountDeleteModal()}
       </main>
     </div>`;
   bind();
@@ -1078,7 +1184,7 @@ function currentUser() {
   const account = activeAccount();
   if (account) return account.name;
   return {
-    "CEO":"Mia Santos",
+    "CEO":"Vincent Julien",
     "COO":"Lara Cruz",
     "ACCOUNTS HEAD":"Paolo Reyes",
     "ACCOUNT MANAGER":"Paolo Reyes",
@@ -1101,8 +1207,12 @@ function currentUser() {
 
 function dashboardTitle() {
   if (isSuperAdminMode()) return "Admin Dashboard";
-  const clean = state.role.replace("SUPER ADMIN / ", "").replace(" / MULTIMEDIA ARTIST", "");
+  const clean = String(activeAccount()?.role || state.role).replace("SUPER ADMIN / ", "").replace(" / MULTIMEDIA ARTIST", "");
   return `${clean} Dashboard`;
+}
+
+function dashboardGreeting() {
+  return `Hi, ${escapeHtml(activeAccount()?.name || currentUser())}!`;
 }
 
 function dashboardProfile(role = state.role) {
@@ -1491,17 +1601,18 @@ const widgetRegistry = {
     purpose: "YTD performance, actualized performance, and forecast in one executive view.",
     render: () => {
       const m = metrics();
-      const target = 100000000;
-      const grandTotal = 73300000;
-      const projectCost = 58434311.2244897959;
-      const asfRevenue = 7012117.3469387755;
-      const subTotal = 65446428.5714285714;
-      const vat = 7853571.4285714286;
-      const projectSavings = Math.max(0, Math.round(subTotal - projectCost - asfRevenue));
+      const target = Number(settings.annualRevenueTarget || 0);
+      const grandTotal = Number(m.actRevenue || 0);
+      const projectCost = Number(m.actCost || 0);
+      const asfRevenue = db.projects.reduce((sum, item) => sum + (item.actualRevenue ? Number(item.asf || 0) : 0), 0);
+      const subTotal = grandTotal / (1 + settings.vatDefault);
+      const vat = grandTotal - subTotal;
+      const projectSavings = db.projects.reduce((sum, item) => sum + Number(item.savings || 0), 0);
+      const payableTotal = apDetailRows().reduce((sum, item) => sum + Number(item.amount || 0), 0);
       return `<div class="health-rows">
         <div class="health-row">
           <h4>Year to Date Performance</h4>
-          <div>${mini("Total YTD Revenue", fmt(grandTotal))}${mini("Revenue vs Target", `${Math.round(grandTotal / target * 100)}%`)}${mini("Total ASF Revenue", fmt(asfRevenue))}</div>
+          <div>${mini("Total YTD Revenue", fmt(grandTotal))}${mini("Revenue vs Target", target ? `${Math.round(grandTotal / target * 100)}%` : "Not set")}${mini("Total ASF Revenue", fmt(asfRevenue))}</div>
         </div>
         <div class="health-row">
           <h4>Actualized Performance</h4>
@@ -1509,7 +1620,7 @@ const widgetRegistry = {
         </div>
         <div class="health-row">
           <h4>Performance Forecast</h4>
-          <div>${mini("Accounts Receivables", fmt(m.ar))}${mini("Accounts Payables", fmt(820000))}${mini("Projected Revenue (Pipeline)", fmt(m.pipelineValue))}</div>
+          <div>${mini("Accounts Receivables", fmt(m.ar))}${mini("Accounts Payables", fmt(payableTotal))}${mini("Projected Revenue (Pipeline)", fmt(m.pipelineValue))}</div>
         </div>
         <div class="health-formula">${mini("Sub-total", fmt(subTotal))}${mini("VAT", fmt(vat))}${mini("Grand Total", fmt(grandTotal))}</div>
       </div>`;
@@ -1829,8 +1940,29 @@ const widgetRegistry = {
     purpose: "Client-facing actions that keep opportunities moving.",
     render: () => queueTable(dashboardSeed.clientActions.filter(a => roleIsManagement() || a.owner === currentUser()).map(a => ({ projectId:a.projectId, item:a.action, owner:a.owner, due:a.due, status:a.status, next:a.nextAction })), ["Project","Item","Owner","Due","Status","Next Action"])
   },
-  pitch_performance: { title: "Pitch Performance", purpose: "Pitch-to-award conversion.", render: () => barChart("Pitch Outcomes", [{ label:"Won", value:2, color:"good" }, { label:"Pending", value:2, color:"warn" }, { label:"Lost", value:1, color:"risk" }], "pitches") },
-  revenue_forecast: { title: "Revenue Forecast", purpose: "Expected revenue by time window.", render: () => barChart("Expected Revenue", [{ label:"30 days", value:2400000 }, { label:"60 days", value:1850000 }, { label:"90 days", value:980000 }], "PHP") },
+  pitch_performance: {
+    title: "Pitch Performance",
+    purpose: "Pitch-to-award conversion.",
+    render: () => barChart("Pitch Outcomes", [
+      { label:"Won", value:db.projects.filter(item => ["AWARDED", "ONBOARDING", "PRE-PRODUCTION", "LIVE / IMPLEMENTATION", "POST-PRODUCTION", "FOR BILLING", "BILLED", "COLLECTION", "CLOSURE", "CLOSED"].includes(item.stage)).length, color:"good" },
+      { label:"Pending", value:db.projects.filter(item => ["LEAD", "QUALIFICATION", "BRIEFED", "COSTING", "PITCHING", "NEGOTIATION"].includes(item.stage)).length, color:"warn" },
+      { label:"Lost", value:db.projects.filter(item => item.stage === "LOST").length, color:"risk" }
+    ], "pitches")
+  },
+  revenue_forecast: {
+    title: "Revenue Forecast",
+    purpose: "Expected revenue by time window.",
+    render: () => {
+      const rows = [[0, 30, "30 days"], [31, 60, "60 days"], [61, 90, "90 days"]].map(([start, end, label]) => ({
+        label,
+        value:db.projects.filter(item => {
+          const days = daysUntil(item.liveDate);
+          return days >= start && days <= end;
+        }).reduce((sum, item) => sum + Number(item.expectedRevenue || 0), 0)
+      }));
+      return barChart("Expected Revenue", rows, "PHP");
+    }
+  },
   my_projects: { title: "My Projects", purpose: "Projects where the user owns client or delivery responsibility.", render: () => projectTable(myProjects()) },
   client_deadlines: { title: "Client Deadlines", purpose: "Client decisions due in the next 7 to 14 days.", render: () => widgetRegistry.client_followups.render() },
   approval_status: { title: "Project Approval Status", purpose: "Brief, CE, PO, creative, production, and billing status by project.", render: () => simpleTable(myProjects().map(p => ({ project:p.code, brief:chip("Attached","good"), ce:p.approvedCe ? chip("Signed","good") : chip("Pending","warn"), po:p.stage === "PITCHING" ? chip("Missing","risk") : chip("Received","good"), billing:p.actualRevenue ? chip("Issued","good") : chip("Not yet","warn") })), ["project","brief","ce","po","billing"]) },
@@ -1904,7 +2036,7 @@ function renderRoleDashboard() {
     <div class="commandbar">
       <div>
         <div class="eyebrow">Spotlight OS Command Center</div>
-        <h2>${dashboardTitle()}</h2>
+        <h2>Dashboard</h2>
         <p>${profile.question}</p>
       </div>
       <div class="actions"><button class="btn primary" data-view="Projects">View</button></div>
@@ -1998,15 +2130,15 @@ function ceoConfigurableCards() {
 }
 
 function ceoRevenueProgress() {
-  const target = 100000000;
-  const grandTotal = 73300000;
-  const percent = Math.min(100, Math.round(grandTotal / target * 100));
+  const target = Number(settings.annualRevenueTarget || 0);
+  const grandTotal = Number(metrics().actRevenue || 0);
+  const percent = target ? Math.min(100, Math.round(grandTotal / target * 100)) : 0;
   const remaining = Math.max(0, target - grandTotal);
   return `<section class="revenue-progress" aria-label="Revenue progress">
     <div class="progress-copy">
       <span>Revenue vs Target</span>
-      <strong>${percent}% complete</strong>
-      <small>${fmt(remaining)} remaining to target</small>
+      <strong>${target ? `${percent}% complete` : "Target not set"}</strong>
+      <small>${target ? `${fmt(remaining)} remaining to target` : "Use the business data template to set the annual target."}</small>
     </div>
     <div class="game-progress">
       <div class="game-progress-track"><i style="width:${percent}%"></i></div>
@@ -2018,10 +2150,11 @@ function ceoRevenueProgress() {
 function ceoCardData(label) {
   const m = metrics();
   const underAudit = db.liquidations.filter(l => /Under Audit|For Cash Return|For Reimbursement/i.test(l.status)).reduce((s,l)=>s + Math.max(0, l.released - l.returned), 0);
+  const payableRows = apDetailRows();
   const map = {
-    "Revenue YTD": { label, value: fmt(73300000), hint:"Grand total revenue including ASF and VAT", view:"Finance" },
+    "Revenue YTD": { label, value: fmt(m.actRevenue), hint:"Grand total recognized revenue", view:"Finance" },
     "Accounts Receivables": { label, view:"Finance", tone:"risk", content: ceoMoneyCard("Accounts Receivables", m.ar, "Billed but not collected", arDetailRows()) },
-    "Accounts Payable": { label, view:"Finance", tone:"risk", content: ceoMoneyCard("Accounts Payable", 820000, "Supplier obligations due", apDetailRows()) },
+    "Accounts Payable": { label, view:"Finance", tone:"risk", content: ceoMoneyCard("Accounts Payable", payableRows.reduce((sum, item) => sum + Number(item.amount || 0), 0), "Supplier obligations due", payableRows) },
     "Total Unliquidated Amount": { label, value: fmt(underAudit), hint:"Released cash under employee accountability", view:"Liquidations", tone:"urgent" }
   };
   return map[label];
@@ -2122,11 +2255,10 @@ function arDetailRows() {
 }
 
 function apDetailRows() {
-  return [
-    { name: "BuildRight Fabrication", context: "Fabrication balance", amount: 320000, due:"2026-08-25" },
-    { name: "ProAV Manila", context: "Technical supplier", amount: 290000, due:"2026-09-01" },
-    { name: "Island Movers", context: "Logistics payable", amount: 210000, due:"2026-09-10" }
-  ].map(row => {
+  return db.budgetRequests
+    .filter(item => /REQUESTED|UNDER REVIEW|APPROVED|RELEASED/i.test(item.status) && item.recipient)
+    .map(item => ({ name:item.recipient, context:item.category || "Supplier obligation", amount:Number(item.amount || 0), due:item.dateRequired || dashboardToday }))
+    .map(row => {
     const daysOverdue = agingDays(row.due);
     const dueIn = Math.max(0, daysUntil(row.due));
     return { ...row, daysOverdue, aging:daysOverdue ? `${daysOverdue} day${daysOverdue === 1 ? "" : "s"} overdue` : dueIn ? `Due in ${dueIn} day${dueIn === 1 ? "" : "s"}` : "Due today" };
@@ -2427,7 +2559,7 @@ function enhanceReviewableLineItems() {
 }
 
 function roleIsManagement() {
-  return /^(CEO|COO|ACCOUNTS HEAD|PRODUCTION HEAD|CREATIVE DIRECTOR|ASSOCIATE CREATIVE DIRECTOR|FINANCE LEAD|FINANCE OFFICER)$/.test(canonicalRole());
+  return /^(CEO|COO|ACCOUNTS HEAD|PRODUCTION HEAD|CREATIVE DIRECTOR|ASSOCIATE CREATIVE DIRECTOR|FINANCE LEAD|FINANCE OFFICER)$/.test(canonicalRole()) || productionApprovalAuthority();
 }
 
 function myProjects() {
@@ -2741,13 +2873,15 @@ function projectSuppliersDashboard(p) {
 }
 
 function yearOnYearRevenue() {
-  const currentYear = "2026";
-  const currentPerformance = 73300000;
+  const currentYear = dashboardToday.slice(0, 4);
+  const currentPerformance = Number(metrics().actRevenue || 0);
   const revenueByYear = {
     ...dashboardSeed.monthlyRevenue,
-    [currentYear]: [currentPerformance]
+    [currentYear]: dashboardSeed.monthlyRevenue[currentYear]?.length
+      ? dashboardSeed.monthlyRevenue[currentYear]
+      : [currentPerformance]
   };
-  const years = Object.keys(revenueByYear);
+  const years = Object.keys(revenueByYear).sort();
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const latestYear = years[years.length - 1];
   const selectedYear = selectedRevenueYear && revenueByYear[selectedRevenueYear] ? selectedRevenueYear : latestYear;
@@ -2829,7 +2963,7 @@ function lineChart(title, series, labels) {
 
 function userByRole() {
   return {
-    "SUPER ADMIN / CEO": "Mia Santos",
+    "SUPER ADMIN / CEO": "Vincent Julien",
     "CLIENT PARTNER / ACCOUNT EXECUTIVE": "Paolo Reyes",
     "GRAPHIC DESIGNER / MULTIMEDIA ARTIST": "Andrea Valdez",
     "COPYWRITER": "Isa Garcia",
@@ -3176,16 +3310,56 @@ function accountDepartmentForRole(role) {
   return roleDepartments.find(department => department.roles.includes(role))?.name || "Unassigned";
 }
 
+function roleUsesProductionTeam(role) {
+  return accountDepartmentForRole(role) === "Production & Implementation";
+}
+
+function normalizedProductionTeam(role, value = "") {
+  if (!roleUsesProductionTeam(role)) return "";
+  const team = String(value || "").toUpperCase();
+  if (role === "PRODUCTION HEAD" && team === "ALL TEAMS") return team;
+  return ["TEAM 1", "TEAM 2"].includes(team) ? team : role === "PRODUCTION HEAD" ? "ALL TEAMS" : "TEAM 1";
+}
+
+function productionTeamLabel(team = "") {
+  if (team === "ALL TEAMS") return "All teams";
+  if (team === "TEAM 1") return "Team 1";
+  if (team === "TEAM 2") return "Team 2";
+  return "—";
+}
+
+function accountTeamField(role, selected = "", attributes = "") {
+  const enabled = roleUsesProductionTeam(role);
+  const value = normalizedProductionTeam(role, selected);
+  const options = role === "PRODUCTION HEAD" ? ["ALL TEAMS", "TEAM 1", "TEAM 2"] : ["TEAM 1", "TEAM 2"];
+  return `<label class="account-team-field" ${attributes} ${enabled ? "" : "hidden"}><span>Production Team</span><select name="team" ${enabled ? "" : "disabled"}>${options.map(team => `<option value="${team}" ${team === value ? "selected" : ""}>${productionTeamLabel(team)}</option>`).join("")}</select></label>`;
+}
+
+function productionApprovalAuthority(account = activeAccount()) {
+  if (!account || account.status !== "ACTIVE") return false;
+  if (account.role === "EVENT MANAGER") return true;
+  if (account.role !== "EVENT OFFICER") return false;
+  const team = normalizedProductionTeam(account.role, account.team);
+  return !userAccounts.some(item => item.id !== account.id && item.status === "ACTIVE" && item.role === "EVENT MANAGER" && normalizedProductionTeam(item.role, item.team) === team);
+}
+
+function roleDefaultScope(role) {
+  const canonical = String(role || "").trim().toUpperCase();
+  if (/^(CEO|COO)$/.test(canonical)) return "ALL";
+  if (/^(ACCOUNTS HEAD|PRODUCTION HEAD|EVENT MANAGER|EVENT OFFICER|CREATIVE DIRECTOR|ASSOCIATE CREATIVE DIRECTOR|ART LEAD|FINANCE LEAD)$/.test(canonical)) return "TEAM";
+  return "ASSIGNED";
+}
+
 function accountAccessPages(role) {
-  if (role === "SUPER ADMIN") return ["Dashboard", "Accounts"];
-  const pages = ["Dashboard"];
-  if (canViewApprovals(role)) pages.push("Approvals");
-  if (canonicalRole(role) !== "ADMIN & HR OFFICER") pages.push("Projects");
-  if (clientAccessProfile(role).scope !== "none") pages.push("Clients");
-  if (financeAccessProfile(role).scope !== "none") pages.push("Finance");
-  pages.push("Liquidations");
-  if (supplierAccessProfile(role).scope !== "none") pages.push("Suppliers");
-  return pages;
+  const canonical = canonicalRole(role);
+  if (canonical === "SUPER ADMIN") return ["Dashboard", "Accounts"];
+  if (/^(CEO|COO)$/.test(canonical)) return ["Dashboard", "Approvals", "Projects", "Clients", "Finance", "Liquidations", "Suppliers"];
+  if (/^(ACCOUNTS HEAD|ACCOUNT MANAGER|ACCOUNT EXECUTIVE)$/.test(canonical)) return ["Dashboard", "Approvals", "Projects", "Clients", "Finance", "Liquidations"];
+  if (/^(PRODUCTION HEAD|PROJECT MANAGER|PROJECT COORDINATOR)$/.test(canonical)) return ["Dashboard", "Approvals", "Projects", "Liquidations", "Suppliers"];
+  if (/^(CREATIVE DIRECTOR|ASSOCIATE CREATIVE DIRECTOR|ART LEAD|COPYWRITER|GRAPHIC ARTIST|3D ARTIST)$/.test(canonical)) return ["Dashboard", "Approvals", "Projects", "Liquidations"];
+  if (/^(FINANCE LEAD|FINANCE OFFICER)$/.test(canonical)) return ["Dashboard", "Approvals", "Finance", "Liquidations", "Suppliers"];
+  if (canonical === "FINANCE COMPLIANCE & ASSISTANT") return ["Dashboard", "Approvals", "Finance", "Liquidations"];
+  return ["Dashboard"];
 }
 
 function accountRoleOptions(selected = "ACCOUNT EXECUTIVE") {
@@ -3198,10 +3372,38 @@ function accessScopeLabel(scope) {
 
 function accountScopeDescription(scope) {
   return {
-    ASSIGNED:"Own records and projects specifically assigned to this user.",
-    TEAM:"Own and assigned records, plus records owned by people reporting to this user.",
-    ALL:"All records available to the selected role across the organization."
-  }[scope] || "Own records and projects specifically assigned to this user.";
+    ASSIGNED:"Own records are automatic, plus records and projects specifically assigned to this user.",
+    TEAM:"Own and assigned records, plus direct and indirect reports within the role's department.",
+    ALL:"All permitted records across the organization; role rules still control actions."
+  }[scope] || "Own records are automatic, plus records and projects specifically assigned to this user.";
+}
+
+function accountRoleAuthority(role) {
+  if (role === "EVENT MANAGER") return "Assigned production team delivery, budgets, suppliers, liquidations, and approval authority for the selected team.";
+  if (role === "EVENT OFFICER") return "The same team delivery access as an Event Manager. Approval authority activates only when no active Event Manager is assigned to the same team.";
+  const canonical = canonicalRole(role);
+  if (canonical === "CEO") return "Organization-wide visibility with final approval, override, audit, archive, and Admin authority.";
+  if (canonical === "COO") return "Organization-wide operational visibility and workflow approvals; CEO-only final decisions, archives, overrides, and Admin controls remain excluded.";
+  if (canonical === "ACCOUNTS HEAD") return "Accounts team portfolio: clients, projects, CE, billing, collection, team approvals, reimbursements, and post-audit. Executive business health and Supplier/AP workspaces are excluded.";
+  if (/^ACCOUNT (MANAGER|EXECUTIVE)$/.test(canonical)) return "Assigned client and project portfolio with CE, billing, collection, approvals, and personal reimbursement access.";
+  if (canonical === "PRODUCTION HEAD") return "Production team portfolio with project delivery, budget and release workflows, suppliers, liquidation, and post-audit.";
+  if (/^(PROJECT MANAGER|PROJECT COORDINATOR)$/.test(canonical)) return "Assigned project delivery, budget and release workflows, suppliers, liquidation, and post-audit.";
+  if (/^(CREATIVE DIRECTOR|ASSOCIATE CREATIVE DIRECTOR|ART LEAD)$/.test(canonical)) return "Creative team projects, creative review queues, team activity, and reimbursement visibility within the reporting line.";
+  if (/^(COPYWRITER|GRAPHIC ARTIST|3D ARTIST)$/.test(canonical)) return "Assigned creative projects, deliverables, review items, personal activity, and reimbursement records.";
+  if (canonical === "FINANCE LEAD") return "Finance team oversight across approvals, releases, liquidation, supplier payables, billing, collection, and company financial health.";
+  if (canonical === "FINANCE OFFICER") return "Finance operating access across approvals, releases, liquidation, supplier payables, billing, collection, and company financial health.";
+  if (canonical === "FINANCE COMPLIANCE & ASSISTANT") return "Company-wide validation and audit access for approvals, releases, and liquidation; Supplier/AP and executive health remain excluded.";
+  return "Personal dashboard and activity records for this role.";
+}
+
+function accountScopeField(role, attributes = "") {
+  const scope = roleDefaultScope(role);
+  return `<fieldset class="account-scope-field" ${attributes}><legend>Record Scope</legend><b>${escapeHtml(accessScopeLabel(scope))}</b><input type="hidden" name="scope" value="${scope}" /><small>Set by the approved role matrix.</small></fieldset>`;
+}
+
+function accountAccessPreview(role) {
+  const scope = roleDefaultScope(role);
+  return `<span>Effective Access</span><h3>${escapeHtml(role)}</h3><p>${escapeHtml(accountDepartmentForRole(role))} · ${escapeHtml(accessScopeLabel(scope))} records</p><div>${accountAccessPages(role).map(page => `<i>${escapeHtml(page)}</i>`).join("")}</div><b class="account-access-boundary">${escapeHtml(accountRoleAuthority(role))}</b><small>${escapeHtml(accountScopeDescription(scope))}</small>`;
 }
 
 function accountDisplayStatus(account) {
@@ -3232,9 +3434,23 @@ function accountEditModal() {
       <form id="accountEditForm" class="account-edit-form">
         <label><span>Full Name</span><input name="name" value="${escapeHtml(account.name)}" required /></label>
         <label><span>Email</span><input name="email" type="email" value="${escapeHtml(account.email)}" required /></label>
-        ${account.switchable ? `<label><span>Role</span><input value="${escapeHtml(account.role)}" disabled /><input type="hidden" name="role" value="${escapeHtml(account.role)}" /></label><fieldset><legend>Record Scope</legend><b>${escapeHtml(accessScopeLabel(account.scope))}</b><input type="hidden" name="scope" value="${escapeHtml(account.scope)}" /></fieldset>` : `<label><span>Role</span><select name="role">${accountRoleOptions(account.role)}</select></label><fieldset><legend>Record Scope</legend>${["ASSIGNED", "TEAM", "ALL"].map(scope => `<label><input type="radio" name="scope" value="${scope}" ${account.scope === scope ? "checked" : ""} /> ${accessScopeLabel(scope)}</label>`).join("")}</fieldset>`}
+        ${account.switchable ? `<label><span>Role</span><input value="${escapeHtml(account.role)}" disabled /><input type="hidden" name="role" value="${escapeHtml(account.role)}" /></label>${accountScopeField(account.role)}` : `<label><span>Role</span><select name="role" data-account-edit-role>${accountRoleOptions(account.role)}</select></label>${accountScopeField(account.role, "data-account-edit-scope")}`}
+        ${accountTeamField(account.role, account.team, "data-account-edit-team")}
         <div class="modal-actions"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-account-edit-close>Cancel</button></div>
       </form>
+    </section>
+  </div>`;
+}
+
+function accountDeleteModal() {
+  const account = userAccounts.find(item => item.id === state.accountDeleteId);
+  if (!account || account.switchable || !isSuperAdminMode()) return "";
+  return `<div class="review-backdrop" role="presentation" data-account-delete-close>
+    <section class="review-modal account-delete-modal" role="dialog" aria-modal="true" aria-label="Delete user account">
+      <button class="modal-close" type="button" data-account-delete-close aria-label="Close account deletion">×</button>
+      <div class="modal-kicker">Account Management</div><h2>Delete Account?</h2>
+      <p><b>${escapeHtml(account.name)}</b> will no longer be able to sign in. The account activity log will retain the deletion record.</p>
+      <div class="modal-actions"><button class="btn danger" type="button" data-account-delete-confirm="${escapeHtml(account.id)}">Delete</button><button class="btn" type="button" data-account-delete-close>Cancel</button></div>
     </section>
   </div>`;
 }
@@ -3253,6 +3469,14 @@ function downloadAccountActivityLog() {
   recordAccountActivity("Activity log downloaded", `${accountActivity.length} account events exported`);
 }
 
+function testingKitDownloads() {
+  return `<section class="account-admin-section testing-kit"><div class="client-section-title"><div><span>Testing Resources</span><h3>Templates &amp; Training</h3></div><small>Use these files to prepare the first test dataset.</small></div><div class="testing-kit-grid">
+    <article><b>Business Data</b><p>Revenue targets, clients, projects, invoices, collections, suppliers, and calendar items.</p><a class="btn" href="downloads/Spotlight_Business_Data_Template.xlsx" download>Download</a></article>
+    <article><b>Bulk Users</b><p>Names, company emails, departments, roles, record scopes, and reporting lines.</p><a class="btn" href="downloads/Spotlight_Bulk_User_Template.xlsx" download>Download</a></article>
+    <article><b>User Manual</b><p>Role-aware navigation, projects, finance, liquidation, accounts, and testing procedures.</p><div class="testing-kit-actions"><a class="btn" href="downloads/Spotlight_OS_User_Manual.pdf" download>PDF</a><a class="btn" href="downloads/Spotlight_OS_User_Manual.docx" download>Word</a></div></article>
+  </div></section>`;
+}
+
 function superAdminDashboard() {
   const active = userAccounts.filter(account => account.status === "ACTIVE").length;
   const suspended = userAccounts.filter(account => account.status === "SUSPENDED").length;
@@ -3260,24 +3484,43 @@ function superAdminDashboard() {
   return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">Admin Mode</span><h2>Access Control</h2><p>Manage identities and permissions from your CEO account without mixing them into executive operations.</p></div><div class="account-head-actions"><button class="btn" type="button" data-account-log-download>Download</button><button class="btn primary" type="button" data-view="Accounts">Accounts</button></div></div>
     <section class="admin-boundary"><div><span>Mode Boundary</span><b>Admin mode controls the system, not executive decisions.</b></div><p>Use the CEO / Admin switch in the navigation pane to return to projects, approvals, finance, and business performance.</p></section>
     <div class="grid cols-4 admin-metrics">${metric("Accounts", userAccounts.length, "Created identities", "Accounts")}${metric("Active", active, "Can access the system", "Accounts")}${metric("Suspended", suspended, "Access blocked", "Accounts")}${metric("Owner", "CEO", "Controls Admin mode", "Accounts")}</div>
+    ${testingKitDownloads()}
     <section class="account-admin-section"><div class="client-section-title"><div><span>Governance</span><h3>Account Activity</h3></div><small>${recent.length} recent change${recent.length === 1 ? "" : "s"}</small></div>${recent.length ? `<div class="account-activity-list">${recent.map(item => `<article><div><b>${escapeHtml(item.action)}</b><small>${escapeHtml(item.detail)}${item.actor ? ` · ${escapeHtml(item.actor)}` : ""}</small></div><time>${escapeHtml(item.at)}</time></article>`).join("")}</div>` : `<div class="empty">Account changes will appear here.</div>`}</section>`;
+}
+
+function accountDirectoryRow(account) {
+  const team = normalizedProductionTeam(account.role, account.team);
+  return `<article class="account-directory-row">
+    <div class="account-directory-user"><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.email)}</small></div>
+    <div class="account-directory-team"><span>Team</span><b>${escapeHtml(productionTeamLabel(team))}</b></div>
+    <div><span>Scope</span><b>${escapeHtml(accessScopeLabel(account.scope))}</b></div>
+    <div class="account-directory-pages"><span>Pages</span><p class="account-page-list">${accountAccessPages(account.role).map(page => `<i>${escapeHtml(page)}</i>`).join("")}</p></div>
+    <div class="account-directory-status"><span>Status</span>${accountDisplayStatus(account)}</div>
+    <div class="account-directory-action"><button class="btn compact" type="button" data-account-edit="${escapeHtml(account.id)}">Edit</button><button class="btn compact" type="button" data-account-reset="${escapeHtml(account.id)}">Reset</button>${account.switchable ? `<span class="account-protected">Owner</span>` : `<button class="btn compact" type="button" data-account-status="${escapeHtml(account.id)}">${account.status === "SUSPENDED" ? "Activate" : "Suspend"}</button><button class="btn danger compact" type="button" data-account-delete="${escapeHtml(account.id)}">Delete</button>`}</div>
+  </article>`;
+}
+
+function accountDirectoryGroups() {
+  const knownRoles = new Set(availableRoles);
+  const groups = roleDepartments.map(department => {
+    const roleGroups = department.roles.map(role => {
+      const accounts = userAccounts.filter(account => account.role === role).sort((a, b) => String(a.team || "").localeCompare(String(b.team || "")) || a.name.localeCompare(b.name));
+      if (!accounts.length) return "";
+      return `<section class="account-role-group"><div class="account-role-heading"><b>${escapeHtml(role)}</b><span>${accounts.length} ${accounts.length === 1 ? "person" : "people"}</span></div><div>${accounts.map(accountDirectoryRow).join("")}</div></section>`;
+    }).join("");
+    if (!roleGroups) return "";
+    const count = userAccounts.filter(account => account.department === department.name || department.roles.includes(account.role)).length;
+    return `<section class="account-department-group"><header><div><span>Department</span><h4>${escapeHtml(department.name)}</h4></div><small>${count} ${count === 1 ? "account" : "accounts"}</small></header>${roleGroups}</section>`;
+  }).join("");
+  const unassigned = userAccounts.filter(account => !knownRoles.has(account.role));
+  return `${groups}${unassigned.length ? `<section class="account-department-group"><header><div><span>Department</span><h4>Unassigned</h4></div><small>${unassigned.length} accounts</small></header><section class="account-role-group"><div>${unassigned.map(accountDirectoryRow).join("")}</div></section></section>` : ""}`;
 }
 
 function accountAdministrationPage() {
   if (!isSuperAdminMode()) return `<section class="finance-restricted"><span>Restricted</span><h2>Accounts</h2><p>Switch your CEO account to Admin mode to manage users and access.</p></section>`;
-  const directory = userAccounts.map(account => `<article class="account-directory-row">
-    <div class="account-directory-user"><b>${escapeHtml(account.name)}</b><small>${escapeHtml(account.email)}</small></div>
-    <div><span>Department</span><b>${escapeHtml(account.department)}</b></div>
-    <div><span>Role</span><b>${escapeHtml(account.role)}</b></div>
-    <div><span>Scope</span><b>${escapeHtml(accessScopeLabel(account.scope))}</b></div>
-    <div class="account-directory-pages"><span>Pages</span><p class="account-page-list">${accountAccessPages(account.role).map(page => `<i>${escapeHtml(page)}</i>`).join("")}</p></div>
-    <div class="account-directory-status"><span>Status</span>${accountDisplayStatus(account)}</div>
-    <div class="account-directory-action"><button class="btn compact" type="button" data-account-edit="${escapeHtml(account.id)}">Edit</button><button class="btn compact" type="button" data-account-reset="${escapeHtml(account.id)}">Reset</button>${account.switchable ? `<span class="account-protected">Owner</span>` : `<button class="btn compact" type="button" data-account-status="${escapeHtml(account.id)}">${account.status === "SUSPENDED" ? "Activate" : "Suspend"}</button>`}</div>
-  </article>`).join("");
   const initialRole = "ACCOUNT EXECUTIVE";
-  const initialPages = accountAccessPages(initialRole);
   return `<div class="toolbar admin-page-head"><div><span class="page-eyebrow">Admin Mode</span><h2>User Accounts</h2><p>Create one identity per person and assign one role with a clear record scope.</p></div><div class="account-head-actions">${chip("CEO controlled", "active")}<button class="btn" type="button" data-account-log-download>Download</button></div></div>
-    <section class="admin-boundary compact"><div><span>Permission Rule</span><b>Role determines pages. Scope determines which records appear.</b></div><p>Created accounts never inherit CEO or Admin controls. Prototype accounts are stored in this browser until secure sign-in is connected.</p></section>
+    <section class="admin-boundary compact"><div><span>Permission Rule</span><b>The approved role matrix determines pages, record scope, and authority.</b></div><p>Equal page visibility does not mean equal action authority. CEO-only approvals, overrides, archives, and Admin controls remain protected.</p></section>
     <section class="account-create-layout">
       <form id="accountCreateForm" class="account-create-form">
         <div class="client-section-title"><div><span>New User</span><h3>Create Account</h3></div><small>Role and access assignment</small></div>
@@ -3285,15 +3528,17 @@ function accountAdministrationPage() {
           <label><span>Full Name</span><input name="name" required autocomplete="off" placeholder="Employee name" /></label>
           <label><span>Company Email</span><input name="email" type="email" required autocomplete="off" placeholder="name@company.com" /></label>
           <label><span>Role</span><select name="role" data-account-role>${accountRoleOptions(initialRole)}</select></label>
-          <fieldset><legend>Record Scope</legend><label><input type="radio" name="scope" value="ASSIGNED" checked /> Assigned</label><label><input type="radio" name="scope" value="TEAM" /> Team</label><label><input type="radio" name="scope" value="ALL" /> All</label></fieldset>
+          ${accountTeamField(initialRole, "", "data-account-team-field")}
+          ${accountScopeField(initialRole, "data-account-scope-field")}
         </div>
         <div class="account-form-actions"><button class="btn primary" type="submit">Create</button></div>
       </form>
       <aside class="account-access-preview" data-account-access-preview>
-        <span>Effective Access</span><h3>${escapeHtml(initialRole)}</h3><p>${escapeHtml(accountDepartmentForRole(initialRole))} · Assigned records</p><div>${initialPages.map(page => `<i>${escapeHtml(page)}</i>`).join("")}</div><small>${escapeHtml(accountScopeDescription("ASSIGNED"))}</small>
+        ${accountAccessPreview(initialRole)}
       </aside>
     </section>
-    <section class="account-admin-section"><div class="client-section-title"><div><span>Directory</span><h3>Accounts & Access</h3></div><small>${userAccounts.length} account${userAccounts.length === 1 ? "" : "s"}</small></div><div class="account-directory">${directory}</div></section>`;
+    ${testingKitDownloads()}
+    <section class="account-admin-section"><div class="client-section-title"><div><span>Directory</span><h3>Accounts & Access</h3></div><small>${userAccounts.length} account${userAccounts.length === 1 ? "" : "s"}</small></div><div class="account-directory">${accountDirectoryGroups()}</div></section>`;
 }
 
 const views = {
@@ -5547,10 +5792,10 @@ function fundReleaseScenarioRows(projectId, rows = []) {
     }),
     released(splitReleasedSource, 5, "Split request · Receipt attached and released", {
       line: {
-        recipient: normalizeCell(splitReleasedSource.line?.recipient) || "Mia Santos",
+        recipient: normalizeCell(splitReleasedSource.line?.recipient) || "Vincent Julien",
         quotation: normalizeCell(splitReleasedSource.line?.quotation) || "Fast and Easy Fabrication"
       },
-      release: { employee:"Mia Santos", payee:"Fast and Easy Fabrication", mode:"Split", amount:roundCent(splitCashAmount + splitChequeAmount) },
+      release: { employee:"Vincent Julien", payee:"Fast and Easy Fabrication", mode:"Split", amount:roundCent(splitCashAmount + splitChequeAmount) },
       cashRequested: splitCashAmount,
       cashApproved: splitCashAmount,
       chequeRequested: splitChequeAmount,
@@ -5561,7 +5806,7 @@ function fundReleaseScenarioRows(projectId, rows = []) {
       totalRequested: roundCent(splitCashAmount + splitChequeAmount),
       scenarioNotes: [
         { by:"Paolo Reyes · Accounts", at:"Sep 18, 2026 · 10:12 AM", text:"Client requested that part of this allocation be moved to additional registration counters. Keep the signed client file unchanged and track the instruction here." },
-        { by:"Mia Santos · CEO", at:"Sep 18, 2026 · 10:31 AM", text:"Reallocation acknowledged. Proceed within the approved combined amount and retain this trail for actualization." }
+        { by:"Vincent Julien · CEO", at:"Sep 18, 2026 · 10:31 AM", text:"Reallocation acknowledged. Proceed within the approved combined amount and retain this trail for actualization." }
       ]
     }),
     clone(savingsSource, 6, {
@@ -10713,11 +10958,13 @@ function bind() {
     const updateAccessPreview = () => {
       if (!roleField || !preview) return;
       const role = roleField.value;
-      const scope = accountCreateForm.querySelector('input[name="scope"]:checked')?.value || "ASSIGNED";
-      preview.innerHTML = `<span>Effective Access</span><h3>${escapeHtml(role)}</h3><p>${escapeHtml(accountDepartmentForRole(role))} · ${escapeHtml(accessScopeLabel(scope))} records</p><div>${accountAccessPages(role).map(page => `<i>${escapeHtml(page)}</i>`).join("")}</div><small>${escapeHtml(accountScopeDescription(scope))}</small>`;
+      const scopeField = accountCreateForm.querySelector("[data-account-scope-field]");
+      if (scopeField) scopeField.outerHTML = accountScopeField(role, "data-account-scope-field");
+      const teamField = accountCreateForm.querySelector("[data-account-team-field]");
+      if (teamField) teamField.outerHTML = accountTeamField(role, "", "data-account-team-field");
+      preview.innerHTML = accountAccessPreview(role);
     };
     roleField?.addEventListener("change", updateAccessPreview);
-    accountCreateForm.querySelectorAll('input[name="scope"]').forEach(field => field.addEventListener("change", updateAccessPreview));
     accountCreateForm.addEventListener("submit", async event => {
       event.preventDefault();
       if (!isSuperAdminMode()) return;
@@ -10726,7 +10973,8 @@ function bind() {
       const emailField = accountCreateForm.querySelector('input[name="email"]');
       const email = normalizeCell(formData.get("email")).toLowerCase();
       const role = normalizeCell(formData.get("role"));
-      const scope = normalizeCell(formData.get("scope")) || "ASSIGNED";
+      const scope = roleDefaultScope(role);
+      const team = normalizedProductionTeam(role, formData.get("team"));
       if (!name || !email || !availableRoles.includes(role)) return;
       const duplicate = userAccounts.some(account => keyCell(account.email) === keyCell(email));
       if (duplicate) {
@@ -10744,6 +10992,7 @@ function bind() {
         department:accountDepartmentForRole(role),
         role,
         scope,
+        team,
         status:"ACTIVE",
         switchable:false,
         passwordHash:await digestPassword(password),
@@ -10774,6 +11023,13 @@ function bind() {
     render();
   }));
   const accountEditForm = document.getElementById("accountEditForm");
+  const accountEditRole = accountEditForm?.querySelector("[data-account-edit-role]");
+  accountEditRole?.addEventListener("change", () => {
+    const scopeField = accountEditForm.querySelector("[data-account-edit-scope]");
+    if (scopeField) scopeField.outerHTML = accountScopeField(accountEditRole.value, "data-account-edit-scope");
+    const teamField = accountEditForm.querySelector("[data-account-edit-team]");
+    if (teamField) teamField.outerHTML = accountTeamField(accountEditRole.value, "", "data-account-edit-team");
+  });
   accountEditForm?.addEventListener("submit", event => {
     event.preventDefault();
     if (!isSuperAdminMode()) return;
@@ -10783,7 +11039,8 @@ function bind() {
     const name = normalizeCell(formData.get("name"));
     const email = normalizeCell(formData.get("email")).toLowerCase();
     const role = normalizeCell(formData.get("role"));
-    const scope = normalizeCell(formData.get("scope")) || "ASSIGNED";
+    const scope = roleDefaultScope(role);
+    const team = normalizedProductionTeam(role, formData.get("team"));
     const duplicate = userAccounts.some(item => item.id !== account.id && keyCell(item.email) === keyCell(email));
     if (!name || !email || !availableRoles.includes(role) || duplicate) {
       const emailField = accountEditForm.querySelector('input[name="email"]');
@@ -10794,11 +11051,32 @@ function bind() {
       return;
     }
     const previous = `${account.name} · ${account.email} · ${account.role} · ${accessScopeLabel(account.scope)}`;
-    Object.assign(account, { name, email, role, scope, department:accountDepartmentForRole(role) });
+    Object.assign(account, { name, email, role, scope, team, department:accountDepartmentForRole(role) });
     state.accountEditId = null;
     recordAccountActivity("Account updated", `${previous} → ${name} · ${email} · ${role} · ${accessScopeLabel(scope)}`, account.id);
     render();
   });
+  document.querySelectorAll("[data-account-delete]").forEach(button => button.addEventListener("click", () => {
+    if (!isSuperAdminMode()) return;
+    const account = userAccounts.find(item => item.id === button.dataset.accountDelete);
+    if (!account || account.switchable) return;
+    state.accountDeleteId = account.id;
+    render();
+  }));
+  document.querySelectorAll("[data-account-delete-close]").forEach(button => button.addEventListener("click", event => {
+    if (button.classList.contains("review-backdrop") && event.target !== button) return;
+    state.accountDeleteId = null;
+    render();
+  }));
+  document.querySelectorAll("[data-account-delete-confirm]").forEach(button => button.addEventListener("click", () => {
+    if (!isSuperAdminMode()) return;
+    const index = userAccounts.findIndex(item => item.id === button.dataset.accountDeleteConfirm && !item.switchable);
+    if (index < 0) return;
+    const [account] = userAccounts.splice(index, 1);
+    state.accountDeleteId = null;
+    recordAccountActivity("Account deleted", `${account.name} · ${account.email} · ${account.role}`, account.id);
+    render();
+  }));
   document.querySelectorAll("[data-account-reset]").forEach(button => button.addEventListener("click", async () => {
     if (!isSuperAdminMode()) return;
     const account = userAccounts.find(item => item.id === button.dataset.accountReset);
